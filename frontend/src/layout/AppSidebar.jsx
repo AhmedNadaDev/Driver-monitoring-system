@@ -13,28 +13,28 @@ const AppSidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   const sidebarContent = (
     <div
       className={`flex h-full flex-col bg-sidebar transition-all duration-300 ${
-        collapsed ? 'w-16' : 'w-60'
+        collapsed ? 'w-[72px]' : 'w-[260px]'
       }`}
     >
-      <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
-          <Shield className="h-4 w-4 text-sidebar-primary-foreground" />
+      <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 shadow-lg shadow-primary/25">
+          <Shield className="h-5 w-5 text-white" />
         </div>
         {!collapsed && (
-          <>
-            <span className="text-lg font-bold text-sidebar-accent-foreground">Driver Monitor</span>
+          <div className="flex flex-1 items-center justify-between">
+            <span className="text-base font-semibold text-white tracking-tight">Driver Monitor</span>
             <button
               type="button"
               onClick={onMobileClose}
-              className="ml-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-sidebar-foreground hover:bg-sidebar-accent md:hidden"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-all md:hidden"
             >
               <X className="h-4 w-4" />
             </button>
-          </>
+          </div>
         )}
       </div>
 
-      <nav className="mt-4 flex-1 space-y-1 px-2">
+      <nav className="mt-6 flex-1 space-y-1 px-3">
         {navItems.map((item) => {
           const active =
             location.pathname === item.path ||
@@ -45,25 +45,40 @@ const AppSidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
               key={item.path}
               to={item.path}
               onClick={onMobileClose}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                 active
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground'
+                  ? 'bg-gradient-to-r from-primary/20 to-primary/10 text-white'
+                  : 'text-white/60 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <item.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
+              <item.icon className={`h-5 w-5 shrink-0 transition-transform duration-200 ${active ? 'text-primary-foreground' : 'group-hover:scale-110'}`} />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+              {active && (
+                <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary shadow-sm" />
+              )}
             </Link>
           )
         })}
       </nav>
 
-      <button
-        onClick={onToggle}
-        className="m-2 hidden items-center justify-center rounded-lg p-2 text-sidebar-foreground hover:bg-sidebar-accent md:flex"
-      >
-        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-      </button>
+      <div className="border-t border-white/10 p-3">
+        <button
+          onClick={onToggle}
+          className="hidden w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-medium text-white/50 hover:bg-white/5 hover:text-white transition-all md:flex"
+        >
+          {collapsed ? (
+            <>
+              <ChevronRight className="h-4 w-4" />
+              <span>Expand</span>
+            </>
+          ) : (
+            <>
+              <ChevronLeft className="h-4 w-4" />
+              <span>Collapse</span>
+            </>
+          )}
+        </button>
+      </div>
     </div>
   )
 
@@ -72,16 +87,16 @@ const AppSidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
       <aside className="hidden md:block">{sidebarContent}</aside>
 
       <div
-        className={`fixed inset-0 z-50 md:hidden transition-opacity duration-300 ${
-          mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        className={`fixed inset-0 z-50 md:hidden transition-all duration-300 ${
+          mobileOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
         <div
-          className="absolute inset-0 bg-foreground/30 backdrop-blur-sm"
+          className="absolute inset-0 bg-background/80 backdrop-blur-sm"
           onClick={onMobileClose}
         />
         <aside
-          className={`relative z-10 h-full w-64 max-w-full transform transition-transform duration-300 ${
+          className={`relative z-10 h-full w-[280px] max-w-full transform transition-transform duration-300 ease-out ${
             mobileOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -93,4 +108,3 @@ const AppSidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 }
 
 export default AppSidebar
-
