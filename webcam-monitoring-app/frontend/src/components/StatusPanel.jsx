@@ -15,6 +15,10 @@ export default function StatusPanel({
   smokingConfidence,
   alertnessLabel,
   alertnessConfidence,
+  beltLabel,
+  beltConfidence,
+  cellphoneLabel,
+  cellphoneConfidence,
   lastEvent
 }) {
   const smokingText = smokingLabel === 'none' ? 'None' : smokingLabel;
@@ -22,6 +26,12 @@ export default function StatusPanel({
     typeof smokingConfidence === 'number' ? `${Math.round(smokingConfidence * 100)}%` : '—';
   const alertnessConfText =
     typeof alertnessConfidence === 'number' ? `${Math.round(alertnessConfidence * 100)}%` : '—';
+  const beltText = beltLabel === 'belt' ? 'Wearing' : beltLabel === 'no_belt' ? 'Not wearing' : beltLabel ?? '—';
+  const beltConfText =
+    typeof beltConfidence === 'number' ? `${Math.round(beltConfidence * 100)}%` : '—';
+  const cellphoneText = cellphoneLabel === 'cellphone' ? 'Holding phone' : cellphoneLabel === 'none' ? 'None' : cellphoneLabel ?? '—';
+  const cellphoneConfText =
+    typeof cellphoneConfidence === 'number' ? `${Math.round(cellphoneConfidence * 100)}%` : '—';
 
   return (
     <div className="mt-3 rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3">
@@ -46,6 +56,12 @@ export default function StatusPanel({
         </div>
         <div>
           <LabelValue label="Alertness" value={`${alertnessLabel} (${alertnessConfText})`} />
+        </div>
+        <div>
+          <LabelValue label="Seatbelt" value={`${beltText} (${beltConfText})`} />
+        </div>
+        <div>
+          <LabelValue label="Cellphone" value={`${cellphoneText} (${cellphoneConfText})`} />
         </div>
       </div>
 

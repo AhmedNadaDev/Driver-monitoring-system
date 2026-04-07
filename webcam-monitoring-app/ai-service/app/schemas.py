@@ -22,6 +22,20 @@ class DrowsinessPrediction(BaseModel):
     boxes: List[Box]
 
 
+class BeltPrediction(BaseModel):
+    detected: bool  # True = belt worn; False = no belt detected (danger)
+    label: Optional[str]  # 'belt' | 'no_belt' | None
+    confidence: float
+    boxes: List[Box]
+
+
+class CellphonePrediction(BaseModel):
+    detected: bool  # True = driver is holding cellphone (danger)
+    label: Optional[str]  # 'cellphone' | 'no_cellphone' | None
+    confidence: float
+    boxes: List[Box]
+
+
 class PredictRequest(BaseModel):
     imageBase64: str
     imageMime: str = 'image/jpeg'
@@ -33,4 +47,6 @@ class PredictResponse(BaseModel):
     success: bool
     smoking: SmokingPrediction
     drowsiness: DrowsinessPrediction
+    belt: BeltPrediction
+    cellphone: CellphonePrediction
 

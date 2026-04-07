@@ -4,7 +4,7 @@ const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { toUTCDateParts, toFilenameTimestamp } = require('../utils/time');
 
-const EVENT_TYPES = ['cigarettes', 'vape', 'drowsy'];
+const EVENT_TYPES = ['cigarettes', 'vape', 'drowsy', 'cellphone', 'no_belt'];
 
 class EventLogger {
   constructor({ snapshotBaseDir, logsBaseDir }) {
@@ -57,11 +57,13 @@ class EventLogger {
     const cigarettes = this.lastEventByType.cigarettes || null;
     const vape = this.lastEventByType.vape || null;
     const drowsy = this.lastEventByType.drowsy || null;
+    const cellphone = this.lastEventByType.cellphone || null;
+    const no_belt = this.lastEventByType.no_belt || null;
     const last =
-      cigarettes?.timestamp || vape?.timestamp || drowsy?.timestamp
-        ? [cigarettes, vape, drowsy].filter(Boolean).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+      [cigarettes, vape, drowsy, cellphone, no_belt].some(e => e?.timestamp)
+        ? [cigarettes, vape, drowsy, cellphone, no_belt].filter(Boolean).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
         : null;
-    return { cigarettes, vape, drowsy, last };
+    return { cigarettes, vape, drowsy, cellphone, no_belt, last };
   }
 
   async saveEvent({ type, confidence, source, model, imageBuffer, driverName }) {

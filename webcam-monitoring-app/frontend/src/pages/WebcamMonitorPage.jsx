@@ -4,7 +4,7 @@ import { createSocket } from '../lib/socket.js';
 
 const DEFAULT_INFERENCE_INTERVAL_MS = 500;
 const DEFAULT_CAPTURE_QUALITY = 0.75;
-const DEFAULT_CAPTURE_MAX_EDGE = 640;
+const DEFAULT_CAPTURE_MAX_EDGE = 960;
 
 export default function WebcamMonitorPage() {
   const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
@@ -29,6 +29,8 @@ export default function WebcamMonitorPage() {
 
   const [smoking, setSmoking] = useState({ label: 'none', confidence: null });
   const [alertness, setAlertness] = useState({ label: 'awake', confidence: null });
+  const [belt, setBelt] = useState({ label: 'belt', confidence: null });
+  const [cellphone, setCellphone] = useState({ label: 'none', confidence: null });
   const [lastEvent, setLastEvent] = useState(null);
 
   const socket = useMemo(() => createSocket(backendUrl), [backendUrl]);
@@ -52,10 +54,23 @@ export default function WebcamMonitorPage() {
       }
 
       if (payload.drowsiness) {
-        // Backend always returns awake/drowsy as a label.
         setAlertness({
           label: payload.drowsiness.label || 'awake',
           confidence: payload.drowsiness.confidence ?? null
+        });
+      }
+
+      if (payload.belt) {
+        setBelt({
+          label: payload.belt.label || 'no_belt',
+          confidence: payload.belt.confidence ?? null
+        });
+      }
+
+      if (payload.cellphone) {
+        setCellphone({
+          label: payload.cellphone.label || 'none',
+          confidence: payload.cellphone.confidence ?? null
         });
       }
 
@@ -82,8 +97,9 @@ export default function WebcamMonitorPage() {
         const data = await res.json();
         if (typeof data.aiServiceReachable === 'boolean') setAiReachable(data.aiServiceReachable);
         if (data.smoking) setSmoking({ label: data.smoking.label, confidence: data.smoking.confidence });
-        if (data.drowsiness)
-          setAlertness({ label: data.drowsiness.label, confidence: data.drowsiness.confidence });
+        if (data.drowsiness) setAlertness({ label: data.drowsiness.label, confidence: data.drowsiness.confidence });
+        if (data.belt) setBelt({ label: data.belt.label, confidence: data.belt.confidence });
+        if (data.cellphone) setCellphone({ label: data.cellphone.label, confidence: data.cellphone.confidence });
         if (data.lastEvents?.last) setLastEvent(data.lastEvents.last);
       } catch {
         // Ignore; socket will update soon.
@@ -198,8 +214,9 @@ export default function WebcamMonitorPage() {
       const data = await res.json();
       if (typeof data.aiServiceReachable === 'boolean') setAiReachable(data.aiServiceReachable);
       if (data.smoking) setSmoking({ label: data.smoking.label, confidence: data.smoking.confidence });
-      if (data.drowsiness)
-        setAlertness({ label: data.drowsiness.label, confidence: data.drowsiness.confidence });
+      if (data.drowsiness) setAlertness({ label: data.drowsiness.label, confidence: data.drowsiness.confidence });
+      if (data.belt) setBelt({ label: data.belt.label, confidence: data.belt.confidence });
+      if (data.cellphone) setCellphone({ label: data.cellphone.label, confidence: data.cellphone.confidence });
       if (Array.isArray(data.savedEvents) && data.savedEvents.length > 0) {
         setLastEvent(data.savedEvents[data.savedEvents.length - 1]);
       }
@@ -246,6 +263,10 @@ export default function WebcamMonitorPage() {
           smokingConfidence={smoking.confidence}
           alertnessLabel={alertness.label}
           alertnessConfidence={alertness.confidence}
+          beltLabel={belt.label}
+          beltConfidence={belt.confidence}
+          cellphoneLabel={cellphone.label}
+          cellphoneConfidence={cellphone.confidence}
           lastEvent={lastEvent}
         />
       </div>

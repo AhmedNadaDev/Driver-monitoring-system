@@ -1,15 +1,16 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, HTTPException
-from threading import Lock
 
 from app.inference.model_loader import registry
-from app.inference.predictor import predict_smoking, predict_drowsiness
+from app.inference.predictor import predict_smoking, predict_drowsiness, predict_belt, predict_cellphone
 from app.schemas import PredictRequest, PredictResponse
 from app.utils.image_utils import decode_image, resize_to_max_edge
 
 
 app = FastAPI(title='YOLO Inference Service')
 
-inference_lock = Lock()
+# 4 workers — one per model, so all run in parallel on separate CPU cores.
+_executor = ThreadPoolExecutor(max_workers=4)
 
 
 @app.on_event('startup')
@@ -23,7 +24,9 @@ def health():
         'ok': True,
         'loaded': registry.loaded,
         'smoking_label_map': registry.smoking_label_map,
-        'drowsiness_label_map': registry.drowsiness_label_map
+        'drowsiness_label_map': registry.drowsiness_label_map,
+        'belt_label_map': registry.belt_label_map,
+        'cellphone_label_map': registry.cellphone_label_map,
     }
 
 
@@ -36,12 +39,22 @@ def predict(req: PredictRequest):
         image = decode_image(req.imageBase64)
         image = resize_to_max_edge(image)
 
-        # Serialize inference to avoid GPU/CPU contention and keep latency stable.
-        with inference_lock:
-            smoking = predict_smoking(image)
-            drowsiness = predict_drowsiness(image)
+        # Run all 4 models in parallel — total latency = slowest model, not sum of all.
+        tasks = {
+            'smoking':    _executor.submit(predict_smoking,   image),
+            'drowsiness': _executor.submit(predict_drowsiness, image),
+            'belt':       _executor.submit(predict_belt,       image),
+            'cellphone':  _executor.submit(predict_cellphone,  image),
+        }
+        results = {name: future.result() for name, future in tasks.items()}
 
-        return PredictResponse(success=True, smoking=smoking, drowsiness=drowsiness)
+        return PredictResponse(
+            success=True,
+            smoking=results['smoking'],
+            drowsiness=results['drowsiness'],
+            belt=results['belt'],
+            cellphone=results['cellphone'],
+        )
     except HTTPException:
         raise
     except Exception as e:

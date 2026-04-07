@@ -2,8 +2,21 @@ from typing import List, Dict, Any, Optional
 
 from ultralytics.engine.results import Results
 
-from app.config import CONF_THRES, IMAGE_MAX_EDGE, DEVICE
+from app.config import CONF_THRES, DROWSINESS_CONF_THRES, DEVICE, SMOKING_IMGSZ, DROWSINESS_IMGSZ, BELT_IMGSZ, CELLPHONE_IMGSZ
 from app.inference.model_loader import registry
+
+
+def _run_model(model, image, imgsz: int) -> Results:
+    predict_kwargs = {
+        'source': image,
+        'conf': CONF_THRES,
+        'imgsz': imgsz,
+        'verbose': False
+    }
+    if DEVICE:
+        predict_kwargs['device'] = DEVICE
+    results = model.predict(**predict_kwargs)
+    return results[0] if results else None
 
 
 def _boxes_to_payload(result: Results, label_map: Dict[int, str]) -> List[Dict[str, Any]]:
@@ -42,30 +55,15 @@ def predict_smoking(image) -> Dict[str, Any]:
     if not registry.loaded or registry.smoking_model is None:
         raise RuntimeError('Smoking model not loaded')
 
-    predict_kwargs = {
-        'source': image,
-        'conf': CONF_THRES,
-        'imgsz': IMAGE_MAX_EDGE,
-        'verbose': False
-    }
-    if DEVICE:
-        predict_kwargs['device'] = DEVICE
-    results = registry.smoking_model.predict(**predict_kwargs)
-    result = results[0] if results else None
+    result = _run_model(registry.smoking_model, image, SMOKING_IMGSZ)
     boxes = _boxes_to_payload(result, registry.smoking_label_map)
 
     if not boxes:
-        return {
-            'detected': False,
-            'label': None,
-            'confidence': 0.0,
-            'boxes': []
-        }
+        return {'detected': False, 'label': None, 'confidence': 0.0, 'boxes': []}
 
     top = max(boxes, key=lambda b: b['confidence'])
-    detected = True
     return {
-        'detected': detected,
+        'detected': True,
         'label': top['label'],
         'confidence': float(top['confidence']),
         'boxes': boxes
@@ -76,10 +74,11 @@ def predict_drowsiness(image) -> Dict[str, Any]:
     if not registry.loaded or registry.drowsiness_model is None:
         raise RuntimeError('Drowsiness model not loaded')
 
+    # Use lower threshold so subtle drowsiness signals are not filtered out.
     predict_kwargs = {
         'source': image,
-        'conf': CONF_THRES,
-        'imgsz': IMAGE_MAX_EDGE,
+        'conf': DROWSINESS_CONF_THRES,
+        'imgsz': DROWSINESS_IMGSZ,
         'verbose': False
     }
     if DEVICE:
@@ -89,18 +88,64 @@ def predict_drowsiness(image) -> Dict[str, Any]:
     boxes = _boxes_to_payload(result, registry.drowsiness_label_map)
 
     if not boxes:
-        # If nothing clears the confidence threshold, treat as awake.
+        return {'detected': False, 'label': 'awake', 'confidence': 0.0, 'boxes': []}
+
+    # Prioritise any drowsy box over awake — a drowsy signal must not be masked
+    # by a higher-confidence awake box detected in the same frame.
+    drowsy_boxes = [b for b in boxes if b['label'] == 'drowsy']
+    if drowsy_boxes:
+        top = max(drowsy_boxes, key=lambda b: b['confidence'])
         return {
-            'detected': False,
-            'label': 'awake',
-            'confidence': 0.0,
-            'boxes': []
+            'detected': True,
+            'label': 'drowsy',
+            'confidence': float(top['confidence']),
+            'boxes': boxes
         }
 
     top = max(boxes, key=lambda b: b['confidence'])
-    detected = top['label'] == 'drowsy'
     return {
-        'detected': detected,
+        'detected': False,
+        'label': top['label'],
+        'confidence': float(top['confidence']),
+        'boxes': boxes
+    }
+
+
+def predict_belt(image) -> Dict[str, Any]:
+    """detected=True means belt IS worn; detected=False means no belt detected (danger)."""
+    if not registry.loaded or registry.belt_model is None:
+        raise RuntimeError('Belt model not loaded')
+
+    result = _run_model(registry.belt_model, image, BELT_IMGSZ)
+    boxes = _boxes_to_payload(result, registry.belt_label_map)
+
+    if not boxes:
+        # Nothing detected above threshold — assume no belt (safer default)
+        return {'detected': False, 'label': 'no_belt', 'confidence': 0.0, 'boxes': []}
+
+    top = max(boxes, key=lambda b: b['confidence'])
+    return {
+        'detected': top['label'] == 'belt',
+        'label': top['label'],
+        'confidence': float(top['confidence']),
+        'boxes': boxes
+    }
+
+
+def predict_cellphone(image) -> Dict[str, Any]:
+    """detected=True means driver IS holding a cellphone (danger)."""
+    if not registry.loaded or registry.cellphone_model is None:
+        raise RuntimeError('Cellphone model not loaded')
+
+    result = _run_model(registry.cellphone_model, image, CELLPHONE_IMGSZ)
+    boxes = _boxes_to_payload(result, registry.cellphone_label_map)
+
+    if not boxes:
+        return {'detected': False, 'label': None, 'confidence': 0.0, 'boxes': []}
+
+    top = max(boxes, key=lambda b: b['confidence'])
+    return {
+        'detected': top['label'] == 'cellphone',
         'label': top['label'],
         'confidence': float(top['confidence']),
         'boxes': boxes
