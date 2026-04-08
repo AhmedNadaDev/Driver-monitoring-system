@@ -1,6 +1,16 @@
 const { validateInferBody } = require('../utils/validators');
 
-function createInferController({ config, aiClient, eventLogger, cooldownManager, appState, io }) {
+/**
+ * POST /api/infer
+ *
+ * Accepts the same frame payload as before PLUS optional trip context:
+ *   { imageBase64, imageMime, width, height, driverId?, routeId?, busId?, tripId? }
+ *
+ * Detection logic, cooldowns, and confidence thresholds are UNCHANGED.
+ * The only addition is passing the context IDs to eventLogger.saveEvent()
+ * so each Violation is linked to the active trip.
+ */
+function createInferController({ config, aiClient, eventLogger, cooldownManager, appState, io, alertConfig = {} }) {
   return async function infer(req, res, next) {
     try {
       const validation = validateInferBody(req.body, { maxFrameBytes: config.MAX_FRAME_BYTES });
@@ -8,60 +18,64 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
 
       const { imageBase64, imageMime, width, height } = req.body;
 
+      // Trip context — all optional; violations are still saved without them.
+      const driverId = req.body.driverId || null;
+      const routeId  = req.body.routeId  || null;
+      const busId    = req.body.busId    || null;
+      const tripId   = req.body.tripId   || null;
+
       const imageBuffer = Buffer.from(imageBase64, 'base64');
 
-      // Forward to Python AI service.
+      // Forward to Python AI service (unchanged).
       const predictions = await aiClient.predict({ imageBase64, imageMime, width, height });
       if (!predictions?.success) throw new Error('AI service returned unsuccessful response');
 
-      const smokingPred = predictions.smoking || {};
+      const smokingPred   = predictions.smoking    || {};
       const drowsinessPred = predictions.drowsiness || {};
-      const beltPred = predictions.belt || {};
-      const cellphonePred = predictions.cellphone || {};
+      const beltPred      = predictions.belt       || {};
+      const cellphonePred = predictions.cellphone  || {};
 
-      const smokingLabel = smokingPred.detected ? smokingPred.label : 'none';
+      const smokingLabel      = smokingPred.detected ? smokingPred.label : 'none';
       const smokingConfidence = typeof smokingPred.confidence === 'number' ? smokingPred.confidence : null;
-      const drowsinessLabel = drowsinessPred.label || 'awake';
+      const drowsinessLabel   = drowsinessPred.label || 'awake';
       const drowsinessConfidence =
         typeof drowsinessPred.confidence === 'number' ? drowsinessPred.confidence : null;
-      // belt.detected=true means belt IS worn (safe); false means no belt (danger)
-      const beltLabel = beltPred.detected ? 'belt' : (beltPred.label || 'no_belt');
+      const beltLabel      = beltPred.detected ? 'belt' : (beltPred.label || 'no_belt');
       const beltConfidence = typeof beltPred.confidence === 'number' ? beltPred.confidence : null;
-      // cellphone.detected=true means driver is holding phone (danger)
       const cellphoneLabel = cellphonePred.detected ? 'cellphone' : 'none';
-      const cellphoneConfidence = typeof cellphonePred.confidence === 'number' ? cellphonePred.confidence : null;
+      const cellphoneConfidence =
+        typeof cellphonePred.confidence === 'number' ? cellphonePred.confidence : null;
 
-      // Update live app state regardless of whether we save snapshots.
-      appState.smoking = { label: smokingLabel, confidence: smokingConfidence };
+      // Update live app state (unchanged).
+      appState.smoking    = { label: smokingLabel,    confidence: smokingConfidence };
       appState.drowsiness = { label: drowsinessLabel, confidence: drowsinessConfidence };
-      appState.belt = { label: beltLabel, confidence: beltConfidence };
-      appState.cellphone = { label: cellphoneLabel, confidence: cellphoneConfidence };
+      appState.belt       = { label: beltLabel,       confidence: beltConfidence };
+      appState.cellphone  = { label: cellphoneLabel,  confidence: cellphoneConfidence };
       appState.lastEvents = eventLogger.getLastEvents();
 
       const livePayload = {
         aiServiceReachable: appState.aiServiceReachable,
-        smoking: appState.smoking,
+        smoking:    appState.smoking,
         drowsiness: appState.drowsiness,
-        belt: appState.belt,
-        cellphone: appState.cellphone,
-        lastEvents: appState.lastEvents
+        belt:       appState.belt,
+        cellphone:  appState.cellphone,
+        lastEvents: appState.lastEvents,
+        // Echo back the active trip id so the UI can confirm it.
+        tripId,
       };
       io.emit('liveStatus', livePayload);
 
       const savedEvents = [];
-
-      // Event detection + cooldown logic (per event type).
       const now = Date.now();
+
+      // ── Cigarettes ────────────────────────────────────────────────────────
       if (smokingPred.detected && smokingPred.label === 'cigarettes') {
         const conf = typeof smokingPred.confidence === 'number' ? smokingPred.confidence : 0;
         if (conf >= config.SMOKING_EVENT_MIN_CONF && cooldownManager.isAllowed('cigarettes', now)) {
           const record = await eventLogger.saveEvent({
-            type: 'cigarettes',
-            confidence: conf,
-            source: 'webcam',
-            model: 'smoking-model',
-            imageBuffer,
-            driverName: config.DRIVER_NAME
+            type: 'cigarettes', confidence: conf,
+            source: 'webcam', model: 'smoking-model', imageBuffer,
+            driverId, routeId, busId, tripId, alertConfig,
           });
           cooldownManager.markTriggered('cigarettes', now);
           savedEvents.push(record);
@@ -69,16 +83,14 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
         }
       }
 
+      // ── Vape ──────────────────────────────────────────────────────────────
       if (smokingPred.detected && smokingPred.label === 'vape') {
         const conf = typeof smokingPred.confidence === 'number' ? smokingPred.confidence : 0;
         if (conf >= config.SMOKING_EVENT_MIN_CONF && cooldownManager.isAllowed('vape', now)) {
           const record = await eventLogger.saveEvent({
-            type: 'vape',
-            confidence: conf,
-            source: 'webcam',
-            model: 'smoking-model',
-            imageBuffer,
-            driverName: config.DRIVER_NAME
+            type: 'vape', confidence: conf,
+            source: 'webcam', model: 'smoking-model', imageBuffer,
+            driverId, routeId, busId, tripId, alertConfig,
           });
           cooldownManager.markTriggered('vape', now);
           savedEvents.push(record);
@@ -86,16 +98,14 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
         }
       }
 
+      // ── Drowsy ────────────────────────────────────────────────────────────
       if (drowsinessPred.detected && drowsinessPred.label === 'drowsy') {
         const conf = typeof drowsinessPred.confidence === 'number' ? drowsinessPred.confidence : 0;
         if (conf >= config.DROWSY_EVENT_MIN_CONF && cooldownManager.isAllowed('drowsy', now)) {
           const record = await eventLogger.saveEvent({
-            type: 'drowsy',
-            confidence: conf,
-            source: 'webcam',
-            model: 'drowsiness-model',
-            imageBuffer,
-            driverName: config.DRIVER_NAME
+            type: 'drowsy', confidence: conf,
+            source: 'webcam', model: 'drowsiness-model', imageBuffer,
+            driverId, routeId, busId, tripId, alertConfig,
           });
           cooldownManager.markTriggered('drowsy', now);
           savedEvents.push(record);
@@ -103,17 +113,14 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
         }
       }
 
-      // Cellphone: detected=true means driver is holding phone (danger)
+      // ── Cellphone ─────────────────────────────────────────────────────────
       if (cellphonePred.detected) {
         const conf = typeof cellphonePred.confidence === 'number' ? cellphonePred.confidence : 0;
         if (conf >= config.CELLPHONE_EVENT_MIN_CONF && cooldownManager.isAllowed('cellphone', now)) {
           const record = await eventLogger.saveEvent({
-            type: 'cellphone',
-            confidence: conf,
-            source: 'webcam',
-            model: 'cellphone-model',
-            imageBuffer,
-            driverName: config.DRIVER_NAME
+            type: 'cellphone', confidence: conf,
+            source: 'webcam', model: 'cellphone-model', imageBuffer,
+            driverId, routeId, busId, tripId, alertConfig,
           });
           cooldownManager.markTriggered('cellphone', now);
           savedEvents.push(record);
@@ -121,17 +128,14 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
         }
       }
 
-      // Belt: detected=false means no belt worn (danger)
+      // ── No Belt ───────────────────────────────────────────────────────────
       if (!beltPred.detected && beltPred.confidence > 0) {
         const conf = typeof beltPred.confidence === 'number' ? beltPred.confidence : 0;
         if (conf >= config.BELT_EVENT_MIN_CONF && cooldownManager.isAllowed('no_belt', now)) {
           const record = await eventLogger.saveEvent({
-            type: 'no_belt',
-            confidence: conf,
-            source: 'webcam',
-            model: 'belt-model',
-            imageBuffer,
-            driverName: config.DRIVER_NAME
+            type: 'no_belt', confidence: conf,
+            source: 'webcam', model: 'belt-model', imageBuffer,
+            driverId, routeId, busId, tripId, alertConfig,
           });
           cooldownManager.markTriggered('no_belt', now);
           savedEvents.push(record);
@@ -144,12 +148,13 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
       return res.json({
         success: true,
         aiServiceReachable: appState.aiServiceReachable,
-        smoking: appState.smoking,
+        smoking:    appState.smoking,
         drowsiness: appState.drowsiness,
-        belt: appState.belt,
-        cellphone: appState.cellphone,
+        belt:       appState.belt,
+        cellphone:  appState.cellphone,
         lastEvents: appState.lastEvents,
-        savedEvents
+        savedEvents,
+        tripId,
       });
     } catch (err) {
       return next(err);
@@ -158,4 +163,3 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
 }
 
 module.exports = createInferController;
-

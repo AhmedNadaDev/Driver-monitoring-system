@@ -3,45 +3,62 @@ const path = require('path');
 const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { toUTCDateParts, toFilenameTimestamp } = require('../utils/time');
+const Violation = require('../models/Violation');
+const Trip = require('../models/Trip');
+const { sendViolationAlert } = require('./alertService');
 
 const EVENT_TYPES = ['cigarettes', 'vape', 'drowsy', 'cellphone', 'no_belt'];
 
+/**
+ * EventLogger
+ *
+ * Keeps snapshot PNG saving exactly as before (via sharp).
+ * Replaces JSON file writing with MongoDB Violation documents.
+ * In-memory lastEventByType cache is seeded from MongoDB on init().
+ */
 class EventLogger {
-  constructor({ snapshotBaseDir, logsBaseDir }) {
+  constructor({ snapshotBaseDir }) {
     this.snapshotBaseDir = snapshotBaseDir;
-    this.logsBaseDir = logsBaseDir;
-
     this.lastEventByType = {};
-    this.writeChainByType = {};
   }
 
+  // ── Initialisation ───────────────────────────────────────────────────────
   async init() {
+    // Ensure snapshot directories exist (unchanged behaviour).
     await fs.ensureDir(this.snapshotBaseDir);
-    await fs.ensureDir(this.logsBaseDir);
-
     for (const type of EVENT_TYPES) {
-      const snapshotDir = path.join(this.snapshotBaseDir, type);
-      await fs.ensureDir(snapshotDir);
+      await fs.ensureDir(path.join(this.snapshotBaseDir, type));
+    }
 
-      const logPath = this._logFilePath(type);
-      const exists = await fs.pathExists(logPath);
-      if (!exists) await fs.writeJson(logPath, [], { spaces: 2 });
-
-      // Load last event so `/api/last-events` is meaningful after restarts.
+    // Prime the in-memory cache from MongoDB so /api/last-events works
+    // correctly after a server restart.
+    for (const type of EVENT_TYPES) {
       try {
-        const events = await fs.readJson(logPath);
-        if (Array.isArray(events) && events.length > 0) {
-          this.lastEventByType[type] = events[events.length - 1];
-        }
+        const last = await Violation.findOne({ type }).sort({ timestamp: -1 }).lean();
+        if (last) this.lastEventByType[type] = this._toRecord(last);
       } catch {
-        // If corruption occurs, reset that file to keep the service running.
-        await fs.writeJson(logPath, [], { spaces: 2 });
+        // Non-fatal: DB may be empty or unreachable on first boot.
       }
     }
   }
 
-  _logFilePath(type) {
-    return path.join(this.logsBaseDir, `${type}.json`);
+  // ── Private helpers ──────────────────────────────────────────────────────
+  _toRecord(violation) {
+    return {
+      id:         violation._id.toString(),
+      object:     violation.type,
+      timestamp:  violation.timestamp instanceof Date
+                    ? violation.timestamp.toISOString()
+                    : violation.timestamp,
+      photo:      violation.imagePath,
+      confidence: violation.confidence,
+      source:     violation.source,
+      model:      violation.model,
+      driver:     violation.driver   ?? null,
+      route:      violation.route    ?? null,
+      bus:        violation.bus      ?? null,
+      trip:       violation.trip     ?? null,
+    };
   }
 
   _snapshotFilePath(type, filename) {
@@ -49,70 +66,124 @@ class EventLogger {
   }
 
   _snapshotRelativePath(filename, type) {
-    // Required to match the structure in the JSON logs.
     return path.posix.join('storage', 'snapshots', type, filename);
   }
 
+  // ── Public API ───────────────────────────────────────────────────────────
   getLastEvents() {
-    const cigarettes = this.lastEventByType.cigarettes || null;
-    const vape = this.lastEventByType.vape || null;
-    const drowsy = this.lastEventByType.drowsy || null;
-    const cellphone = this.lastEventByType.cellphone || null;
-    const no_belt = this.lastEventByType.no_belt || null;
-    const last =
-      [cigarettes, vape, drowsy, cellphone, no_belt].some(e => e?.timestamp)
-        ? [cigarettes, vape, drowsy, cellphone, no_belt].filter(Boolean).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
-        : null;
-    return { cigarettes, vape, drowsy, cellphone, no_belt, last };
+    const pick = (t) => this.lastEventByType[t] || null;
+    const all = EVENT_TYPES.map(pick).filter(Boolean);
+    const last = all.length
+      ? all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+      : null;
+    return {
+      cigarettes: pick('cigarettes'),
+      vape:       pick('vape'),
+      drowsy:     pick('drowsy'),
+      cellphone:  pick('cellphone'),
+      no_belt:    pick('no_belt'),
+      last,
+    };
   }
 
-  async saveEvent({ type, confidence, source, model, imageBuffer, driverName }) {
+  /**
+   * Save a detection event.
+   *
+   * Snapshot PNG is written to disk exactly as before.
+   * Violation is persisted to MongoDB instead of a JSON file.
+   *
+   * @param {object} opts
+   * @param {string}      opts.type         - one of EVENT_TYPES
+   * @param {number}      opts.confidence
+   * @param {string}      opts.source
+   * @param {string}      opts.model
+   * @param {Buffer}      opts.imageBuffer
+   * @param {string|null} opts.driverId     - MongoDB ObjectId string (optional)
+   * @param {string|null} opts.routeId
+   * @param {string|null} opts.busId
+   * @param {string|null} opts.tripId
+   */
+  /**
+   * @param {object}      opts
+   * @param {string}      opts.type
+   * @param {number}      opts.confidence
+   * @param {string}      opts.source
+   * @param {string}      opts.model
+   * @param {Buffer}      opts.imageBuffer
+   * @param {string|null} opts.driverId
+   * @param {string|null} opts.routeId
+   * @param {string|null} opts.busId
+   * @param {string|null} opts.tripId
+   * @param {object}      [opts.alertConfig]  — config object from env.js, injected at init
+   */
+  async saveEvent({ type, confidence, source, model, imageBuffer, driverId, routeId, busId, tripId, alertConfig }) {
     if (!EVENT_TYPES.includes(type)) throw new Error(`Invalid event type: ${type}`);
 
     const ts = new Date();
-    const { date, time } = toUTCDateParts(ts);
     const filenameBase = `${type}_${toFilenameTimestamp(ts)}_${uuidv4().slice(0, 8)}`;
     const filename = `${filenameBase}.png`;
+    const relativePath = this._snapshotRelativePath(filename, type);
 
-    const record = {
-      id: uuidv4(),
-      object: type,
-      date,
-      time,
-      timestamp: ts.toISOString(),
-      photo: this._snapshotRelativePath(filename, type),
-      confidence: Number(confidence),
-      source: source || 'webcam',
-      model: model || null,
-      driverName: driverName || 'Ahmed'
-    };
-
-    // Convert and persist snapshot only when we know the event is meaningful.
+    // ── Snapshot (unchanged) ──────────────────────────────────────────────
     const outPath = this._snapshotFilePath(type, filename);
     await sharp(imageBuffer).png().toFile(outPath);
 
-    // Append to the corresponding JSON log file with a per-type write queue.
-    const logPath = this._logFilePath(type);
-    if (!this.writeChainByType[type]) this.writeChainByType[type] = Promise.resolve();
-    this.writeChainByType[type] = this.writeChainByType[type].then(async () => {
-      const events = await fs.readJson(logPath);
-      const arr = Array.isArray(events) ? events : [];
-      arr.push(record);
-      await fs.writeJson(logPath, arr, { spaces: 2 });
+    // ── MongoDB persistence (replaces JSON write) ─────────────────────────
+    const violation = await Violation.create({
+      type,
+      confidence:  Number(confidence),
+      timestamp:   ts,
+      imagePath:   relativePath,
+      source:      source || 'webcam',
+      model:       model  || null,
+      driver:      driverId || null,
+      route:       routeId  || null,
+      bus:         busId    || null,
+      trip:        tripId   || null,
     });
-    await this.writeChainByType[type];
 
+    // ── Link violation to trip + decrement score (floor at 0) ─────────────
+    if (tripId) {
+      try {
+        await Trip.findByIdAndUpdate(tripId, [
+          {
+            $set: {
+              score: { $max: [0, { $subtract: ['$score', 10] }] },
+              violations: { $concatArrays: ['$violations', [violation._id]] },
+            },
+          },
+        ]);
+      } catch {
+        // Non-fatal: trip score update is best-effort.
+      }
+    }
+
+    // ── Smart Alert: forward to n8n (best-effort, never blocks pipeline) ──
+    sendViolationAlert(
+      violation,
+      { driverId, routeId, busId, tripId },
+      alertConfig || {}
+    ).catch((err) => {
+      console.error('[alert] unexpected error in sendViolationAlert:', err?.message);
+    });
+
+    const record = this._toRecord(violation);
     this.lastEventByType[type] = record;
     return record;
   }
 
+  /**
+   * Read recent violations for a given type (used by /api/logs/:type).
+   * Returns the 100 most recent documents, newest first.
+   */
   async readLogs(type) {
     if (!EVENT_TYPES.includes(type)) throw new Error('Invalid log type');
-    const logPath = this._logFilePath(type);
-    const events = await fs.readJson(logPath);
-    return Array.isArray(events) ? events : [];
+    const violations = await Violation.find({ type })
+      .sort({ timestamp: -1 })
+      .limit(100)
+      .lean();
+    return violations.map((v) => this._toRecord(v));
   }
 }
 
 module.exports = EventLogger;
-
