@@ -14,6 +14,7 @@ Flags can be combined: e.g. --setup --chat
 import argparse
 import logging
 import sys
+import uuid
 
 from rich.console import Console
 from rich.panel import Panel
@@ -28,6 +29,9 @@ logger = logging.getLogger(__name__)
 # Benchmark queries
 # ---------------------------------------------------------------------------
 BENCHMARK_QUERIES = [
+    "Which driver has the most trips?",
+    "Who has the lowest safety score?",
+    "List drivers with drowsiness violations",
     "Which driver had the lowest safety score this week?",
     "List all trips with a safety score below 50.",
     "Who is the safest driver in the past 30 days?",
@@ -40,6 +44,21 @@ BENCHMARK_QUERIES = [
     "Summarise the safety performance of all drivers this month.",
     "Which is the most common violation?",
     "What violations does Cathy Wood often do?",
+]
+
+CONVERSATION_TESTS = [
+    [
+        "Which driver has the lowest safety score?",
+        "Why?",
+    ],
+    [
+        "Which driver has the most trips?",
+        "What about last week?",
+    ],
+    [
+        "List drivers with drowsiness violations",
+        "Which one is worst?",
+    ],
 ]
 
 
@@ -166,14 +185,31 @@ def run_tests(queries=None, stream: bool = False) -> None:
     )
 
 
+def run_conversation_tests() -> None:
+    from rag_pipeline import ask
+
+    console.rule("[bold yellow]Conversational Tests")
+    for scenario_idx, turns in enumerate(CONVERSATION_TESTS, 1):
+        session_id = f"test-session-{scenario_idx}"
+        console.print(f"\n[bold cyan]Scenario {scenario_idx}[/bold cyan] session={session_id}")
+        for turn_idx, query in enumerate(turns, 1):
+            console.print(f"[bold dim]Turn {turn_idx}:[/bold dim] {query}")
+            result = ask(query, stream=False, session_id=session_id)
+            console.print(Panel(result.answer, title=f"Turn {turn_idx} Answer", border_style="green"))
+
+
 # ---------------------------------------------------------------------------
 # Interactive REPL
 # ---------------------------------------------------------------------------
 def run_chat(stream: bool = True) -> None:
     from rag_pipeline import ask
+    session_id = f"cli-{uuid.uuid4().hex[:8]}"
 
     console.rule("[bold cyan]Interactive Mode")
-    console.print("[dim]Type your question and press Enter. Type 'exit' or 'quit' to stop.[/dim]\n")
+    console.print(
+        "[dim]Type your question and press Enter. Type 'exit' or 'quit' to stop.[/dim]\n"
+        f"[dim]Session ID: {session_id} (memory={'on' if settings.enable_memory else 'off'})[/dim]\n"
+    )
 
     while True:
         try:
@@ -188,7 +224,7 @@ def run_chat(stream: bool = True) -> None:
             console.print("[dim]Goodbye.[/dim]")
             break
 
-        result = ask(query, stream=stream)
+        result = ask(query, stream=stream, session_id=session_id)
         if not stream:
             display_result(result)
         else:
@@ -217,7 +253,9 @@ def parse_args():
     parser.add_argument("--embed", action="store_true", help="Generate/update embeddings only")
     parser.add_argument("--test", action="store_true", help="Run benchmark queries")
     parser.add_argument("--chat", action="store_true", help="Start interactive REPL")
+    parser.add_argument("--conversation-test", action="store_true", help="Run multi-turn conversation tests")
     parser.add_argument("--query", type=str, help="Run a single query and exit")
+    parser.add_argument("--session-id", type=str, help="Conversation session id (for memory)")
     parser.add_argument("--stream", action="store_true", default=True)
     parser.add_argument("--no-stream", dest="stream", action="store_false")
     parser.add_argument("--days", type=int, default=14)
@@ -229,7 +267,7 @@ def main():
     args = parse_args()
     display_banner()
 
-    if not any([args.setup, args.embed, args.test, args.chat, args.query]):
+    if not any([args.setup, args.embed, args.test, args.chat, args.query, args.conversation_test]):
         console.print(
             "[yellow]No mode specified. Use --help to see options.\n"
             "Running: --setup --test --chat by default.[/yellow]\n"
@@ -246,11 +284,14 @@ def main():
 
     if args.query:
         from rag_pipeline import ask
-        result = ask(args.query, stream=args.stream)
+        result = ask(args.query, stream=args.stream, session_id=args.session_id)
         display_result(result)
 
     if args.test:
         run_tests(stream=False)
+
+    if args.conversation_test:
+        run_conversation_tests()
 
     if args.chat:
         run_chat(stream=args.stream)

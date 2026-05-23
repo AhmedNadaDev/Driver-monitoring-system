@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from config import settings, get_mongo_client
 from embedding_generator import embed_trip_by_id
 from rag_pipeline import ask
+from memory import memory_store
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 class QueryRequest(BaseModel):
     query: str
+    session_id: str | None = None
 
 class QueryResponse(BaseModel):
     answer: str
@@ -41,6 +43,7 @@ class QueryResponse(BaseModel):
     source: str
     doc_count: int
     total_ms: float
+    session_id: str | None = None
 
 # ── Change Stream auto-embedder ──────────────────────────────────────────────
 
@@ -114,11 +117,25 @@ def _watch_trips() -> None:
 
 # ── App lifespan — start watcher thread before first request ─────────────────
 
+def _run_eval_background() -> None:
+    """Run retrieval evaluation and save results to eval_results.json."""
+    try:
+        from run_eval import save_results
+        save_results()
+    except Exception as exc:
+        logger.error("[Eval] Background eval failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     t = threading.Thread(target=_watch_trips, daemon=True, name="trip-watcher")
     t.start()
     logger.info("[Server] Change Stream watcher thread started.")
+
+    e = threading.Thread(target=_run_eval_background, daemon=True, name="eval-runner")
+    e.start()
+    logger.info("[Server] Retrieval eval started in background.")
+
     yield
 
 
@@ -147,17 +164,24 @@ def query_rag(req: QueryRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query must not be empty")
     try:
-        result = ask(req.query)
+        result = ask(req.query, session_id=req.session_id)
         return QueryResponse(
             answer=result.answer,
             intent=result.intent,
             source=result.source,
             doc_count=result.doc_count,
             total_ms=result.total_ms,
+            session_id=req.session_id,
         )
     except Exception as exc:
         logger.error("RAG pipeline error: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/session/{session_id}")
+def clear_session(session_id: str):
+    memory_store.clear(session_id)
+    return {"status": "cleared", "session_id": session_id}
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────

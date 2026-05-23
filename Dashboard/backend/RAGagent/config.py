@@ -6,10 +6,10 @@ Import `settings` from this module everywhere else.
 """
 
 import os
-import ssl
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
@@ -71,6 +71,14 @@ class Settings:
     max_tokens: int = 1024
     temperature: float = 0.2   # low temperature → factual, grounded answers
 
+    # Conversational memory
+    enable_memory: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_MEMORY", "true").lower() == "true"
+    )
+    memory_max_turns: int = field(
+        default_factory=lambda: int(os.getenv("MEMORY_MAX_TURNS", "5"))
+    )
+
 
 # Singleton — import this everywhere
 settings = Settings()
@@ -81,11 +89,23 @@ def get_mongo_client() -> MongoClient:
     Return a MongoClient with TLS settings that work on Linux servers
     where the default OpenSSL may trigger TLSV1_ALERT_INTERNAL_ERROR.
     """
-    return MongoClient(
-        settings.mongodb_uri,
-        tls=True,
-        tlsAllowInvalidCertificates=True,   # bypasses cert hostname check on strict OpenSSL
-        serverSelectionTimeoutMS=30_000,
-        connectTimeoutMS=20_000,
-        socketTimeoutMS=20_000,
-    )
+    parsed = urlparse(settings.mongodb_uri)
+    is_srv = parsed.scheme == "mongodb+srv"
+    is_localhost = parsed.hostname in {"localhost", "127.0.0.1"}
+
+    client_kwargs = {
+        "serverSelectionTimeoutMS": 30_000,
+        "connectTimeoutMS": 20_000,
+        "socketTimeoutMS": 20_000,
+    }
+
+    # Atlas/SRV requires TLS, while local MongoDB commonly runs without TLS.
+    if is_srv:
+        client_kwargs["tls"] = True
+    elif is_localhost:
+        client_kwargs["tls"] = False
+    else:
+        # For remote mongodb:// URIs, allow opting into TLS via env if needed.
+        client_kwargs["tls"] = os.getenv("MONGODB_TLS", "false").lower() == "true"
+
+    return MongoClient(settings.mongodb_uri, **client_kwargs)

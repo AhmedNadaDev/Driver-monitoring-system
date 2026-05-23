@@ -1,0 +1,344 @@
+{
+    "name": "Driver Monitoring — Smart Violation Alerts (Production)",
+    "nodes": [
+  
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "driver-violation-alert",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "node-webhook",
+        "name": "Violation Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [240, 300],
+        "webhookId": "driver-violation-alert"
+      },
+  
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"received\": true, \"timestamp\": \"{{ $now.toISO() }}\"}",
+          "options": {}
+        },
+        "id": "node-respond",
+        "name": "Respond 200 OK",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [460, 140]
+      },
+  
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": false,
+              "leftValue": "",
+              "typeValidation": "strict"
+            },
+            "conditions": [
+              {
+                "id": "cond-drowsy",
+                "leftValue": "={{ $json.body.type }}",
+                "rightValue": "drowsy",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              },
+              {
+                "id": "cond-confidence",
+                "leftValue": "={{ $json.body.confidence }}",
+                "rightValue": 0.8,
+                "operator": {
+                  "type": "number",
+                  "operation": "gte"
+                }
+              }
+            ],
+            "combinator": "or"
+          },
+          "options": {}
+        },
+        "id": "node-if",
+        "name": "IF: Alert Threshold Check",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [460, 340]
+      },
+  
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "assign-subject",
+                "name": "alertSubject",
+                "value": "=\uD83D\uDEA8 [{{ $json.body.severityLevel.toUpperCase() }}] {{ $json.body.type.toUpperCase() }} detected — {{ $json.body.driverName }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-html-body",
+                "name": "alertHtmlBody",
+                "value": "=<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden\">\n  <div style=\"background:#c0392b;padding:20px;text-align:center\">\n    <h2 style=\"color:#fff;margin:0\">\uD83D\uDEA8 Driver Safety Alert</h2>\n    <p style=\"color:#f5b7b1;margin:6px 0 0\">{{ $json.body.severityLevel.toUpperCase() }} Severity</p>\n  </div>\n  <div style=\"padding:24px\">\n    <table style=\"width:100%;border-collapse:collapse;font-size:15px\">\n      <tr style=\"border-bottom:1px solid #eee\"><td style=\"padding:10px;color:#555;font-weight:bold\">Driver</td><td style=\"padding:10px\">{{ $json.body.driverName }}</td></tr>\n      <tr style=\"border-bottom:1px solid #eee\"><td style=\"padding:10px;color:#555;font-weight:bold\">Violation</td><td style=\"padding:10px\">{{ $json.body.type }}</td></tr>\n      <tr style=\"border-bottom:1px solid #eee\"><td style=\"padding:10px;color:#555;font-weight:bold\">Confidence</td><td style=\"padding:10px\">{{ Math.round($json.body.confidence * 100) }}%</td></tr>\n      <tr style=\"border-bottom:1px solid #eee\"><td style=\"padding:10px;color:#555;font-weight:bold\">Route</td><td style=\"padding:10px\">{{ $json.body.route }}</td></tr>\n      <tr style=\"border-bottom:1px solid #eee\"><td style=\"padding:10px;color:#555;font-weight:bold\">Bus</td><td style=\"padding:10px\">{{ $json.body.bus }}</td></tr>\n      <tr style=\"border-bottom:1px solid #eee\"><td style=\"padding:10px;color:#555;font-weight:bold\">Trip ID</td><td style=\"padding:10px\">{{ $json.body.tripId }}</td></tr>\n      <tr><td style=\"padding:10px;color:#555;font-weight:bold\">Timestamp</td><td style=\"padding:10px\">{{ $json.body.timestamp }}</td></tr>\n    </table>\n  </div>\n  <div style=\"background:#f9f9f9;padding:14px;text-align:center;font-size:12px;color:#aaa\">\n    Automated alert from Driver Monitoring System\n  </div>\n</div>",
+                "type": "string"
+              },
+              {
+                "id": "assign-telegram-msg",
+                "name": "telegramMessage",
+                "value": "=\uD83D\uDEA8 *DRIVER SAFETY ALERT*\n\n*Severity:* `{{ $json.body.severityLevel.toUpperCase() }}`\n*Violation:* {{ $json.body.type }}\n*Driver:* {{ $json.body.driverName }}\n*Confidence:* {{ Math.round($json.body.confidence * 100) }}%\n*Route:* {{ $json.body.route }}\n*Bus:* {{ $json.body.bus }}\n*Trip ID:* {{ $json.body.tripId }}\n*Time:* {{ $json.body.timestamp }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-type",
+                "name": "violationType",
+                "value": "={{ $json.body.type }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-driver",
+                "name": "driverName",
+                "value": "={{ $json.body.driverName }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-confidence",
+                "name": "confidence",
+                "value": "={{ $json.body.confidence }}",
+                "type": "number"
+              },
+              {
+                "id": "assign-severity",
+                "name": "severityLevel",
+                "value": "={{ $json.body.severityLevel }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-route",
+                "name": "route",
+                "value": "={{ $json.body.route }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-bus",
+                "name": "bus",
+                "value": "={{ $json.body.bus }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-trip",
+                "name": "tripId",
+                "value": "={{ $json.body.tripId }}",
+                "type": "string"
+              },
+              {
+                "id": "assign-time",
+                "name": "timestamp",
+                "value": "={{ $json.body.timestamp }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "node-set-message",
+        "name": "Format Alert Message",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [700, 260]
+      },
+  
+      {
+        "parameters": {
+          "sendTo": "ahmednadaahmed79@gmail.com",
+          "subject": "={{ $json.alertSubject }}",
+          "emailType": "html",
+          "message": "={{ $json.alertHtmlBody }}",
+          "options": {
+            "replyTo": "no-reply@driver-monitoring.local"
+          }
+        },
+        "id": "node-gmail",
+        "name": "Send Gmail Alert",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [960, 180],
+        "credentials": {
+          "gmailOAuth2": {
+            "id": "GMAIL_CREDENTIAL_ID",
+            "name": "Gmail OAuth2 (Driver Monitoring)"
+          }
+        }
+      },
+  
+      {
+        "parameters": {
+          "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+          "text": "={{ $json.telegramMessage }}",
+          "additionalFields": {
+            "parse_mode": "Markdown",
+            "disable_notification": false
+          }
+        },
+        "id": "node-telegram",
+        "name": "Send Telegram Alert",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [960, 340],
+        "credentials": {
+          "telegramApi": {
+            "id": "TELEGRAM_CREDENTIAL_ID",
+            "name": "Telegram Bot (Driver Monitoring)"
+          }
+        }
+      },
+  
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "log-sent",
+                "name": "status",
+                "value": "ALERT SENT",
+                "type": "string"
+              },
+              {
+                "id": "log-channels",
+                "name": "channels",
+                "value": "Gmail + Telegram",
+                "type": "string"
+              },
+              {
+                "id": "log-driver",
+                "name": "driver",
+                "value": "={{ $('Format Alert Message').item.json.driverName }}",
+                "type": "string"
+              },
+              {
+                "id": "log-violation",
+                "name": "violation",
+                "value": "={{ $('Format Alert Message').item.json.violationType }}",
+                "type": "string"
+              },
+              {
+                "id": "log-at",
+                "name": "sentAt",
+                "value": "={{ $now.toISO() }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "node-sent-log",
+        "name": "Alert Sent Log",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [1200, 260]
+      },
+  
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "log-skipped",
+                "name": "status",
+                "value": "SKIPPED — below threshold",
+                "type": "string"
+              },
+              {
+                "id": "log-type",
+                "name": "violationType",
+                "value": "={{ $('Violation Webhook').item.json.body.type }}",
+                "type": "string"
+              },
+              {
+                "id": "log-conf",
+                "name": "confidence",
+                "value": "={{ $('Violation Webhook').item.json.body.confidence }}",
+                "type": "number"
+              },
+              {
+                "id": "log-reason",
+                "name": "reason",
+                "value": "=type={{ $('Violation Webhook').item.json.body.type }} and confidence={{ $('Violation Webhook').item.json.body.confidence }} did not meet alert threshold (drowsy OR confidence ≥ 0.8). No notification sent.",
+                "type": "string"
+              },
+              {
+                "id": "log-ts",
+                "name": "skippedAt",
+                "value": "={{ $now.toISO() }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "node-skip-log",
+        "name": "Log Skipped (Below Threshold)",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [700, 460]
+      }
+  
+    ],
+  
+    "connections": {
+      "Violation Webhook": {
+        "main": [
+          [
+            { "node": "Respond 200 OK",           "type": "main", "index": 0 },
+            { "node": "IF: Alert Threshold Check", "type": "main", "index": 0 }
+          ]
+        ]
+      },
+      "IF: Alert Threshold Check": {
+        "main": [
+          [
+            { "node": "Format Alert Message", "type": "main", "index": 0 }
+          ],
+          [
+            { "node": "Log Skipped (Below Threshold)", "type": "main", "index": 0 }
+          ]
+        ]
+      },
+      "Format Alert Message": {
+        "main": [
+          [
+            { "node": "Send Gmail Alert",    "type": "main", "index": 0 },
+            { "node": "Send Telegram Alert", "type": "main", "index": 0 }
+          ]
+        ]
+      },
+      "Send Gmail Alert": {
+        "main": [
+          [
+            { "node": "Alert Sent Log", "type": "main", "index": 0 }
+          ]
+        ]
+      },
+      "Send Telegram Alert": {
+        "main": [
+          [
+            { "node": "Alert Sent Log", "type": "main", "index": 0 }
+          ]
+        ]
+      }
+    },
+  
+    "active": false,
+    "settings": {
+      "executionOrder": "v1",
+      "saveManualExecutions": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "meta": {
+      "templateCredsSetupCompleted": false
+    },
+    "id": "driver-monitoring-alerts-v2",
+    "tags": ["driver-monitoring", "alerts", "safety", "production"]
+  }

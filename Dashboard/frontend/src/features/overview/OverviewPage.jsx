@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import StatCard from '../../shared/components/StatCard.jsx'
 import { notifications, safetyScoreHistory } from '../../data/mockData.js'
+import apiClient from '../../services/apiClient.js'
 
 /* ── Violation type config ───────────────────────────────────────────── */
 const V_CONFIG = {
@@ -55,10 +56,10 @@ const OverviewPage = () => {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/drivers').then((r) => r.json()).catch(() => []),
-      fetch('/api/routes').then((r)  => r.json()).catch(() => []),
-      fetch('/api/buses').then((r)   => r.json()).catch(() => []),
-      fetch('/api/violations').then((r) => r.json()).catch(() => []),
+      apiClient.get('/drivers').then((r) => r.data).catch(() => []),
+      apiClient.get('/routes').then((r) => r.data).catch(() => []),
+      apiClient.get('/buses').then((r) => r.data).catch(() => []),
+      apiClient.get('/violations').then((r) => r.data).catch(() => []),
     ]).then(([drvs, rts, bss, viols]) => {
       /* Drivers */
       const driverList = Array.isArray(drvs) ? drvs : []

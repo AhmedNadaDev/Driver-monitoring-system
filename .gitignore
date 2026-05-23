@@ -12,7 +12,7 @@ dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -23,19 +23,20 @@ dist-ssr
 *.sln
 *.sw?
 
-# ML Models
-models/
-!webcam-monitoring-app/ai-service/models/
-
-# Storage
-**/storage/
-
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 
-# Environment files (contain secrets)
+# Environment
 .env
 .env.local
 .env.*.local
+
+# Large AI / archive files
+*.pt
+*.rar
+*.zip
+
+# Storage
+**/storage/

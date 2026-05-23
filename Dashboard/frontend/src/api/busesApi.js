@@ -1,27 +1,11 @@
-const BASE = '/api/buses'
+import apiClient from '../services/apiClient.js'
 
-const handleResponse = async (res) => {
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`)
-  return json
-}
+export const fetchBuses = () => apiClient.get('/buses').then((r) => r.data)
 
-export const fetchBuses = () => fetch(BASE).then(handleResponse)
-
-// busId is auto-generated; only capacity is sent
 export const createBus = ({ capacity }) =>
-  fetch(BASE, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ capacity }),
-  }).then(handleResponse)
+  apiClient.post('/buses', { capacity }).then((r) => r.data)
 
 export const updateBus = (id, { capacity }) =>
-  fetch(`${BASE}/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ capacity }),
-  }).then(handleResponse)
+  apiClient.put(`/buses/${id}`, { capacity }).then((r) => r.data)
 
-export const deleteBus = (id) =>
-  fetch(`${BASE}/${id}`, { method: 'DELETE' }).then(handleResponse)
+export const deleteBus = (id) => apiClient.delete(`/buses/${id}`).then((r) => r.data)

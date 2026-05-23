@@ -43,6 +43,7 @@ def get_model() -> SentenceTransformer:
 # ---------------------------------------------------------------------------
 def embed_texts(texts: List[str]) -> List[List[float]]:
     """Return a list of embedding vectors (Python lists, not numpy arrays)."""
+    logger.info("Embedding %d text chunks", len(texts))
     model = get_model()
     vectors = model.encode(
         texts,
@@ -138,14 +139,23 @@ def generate_and_store_embeddings(batch_size: int = 64) -> int:
         db         = client[settings.mongodb_database]
         collection = db[settings.mongodb_collection]
 
-        total_pending = collection.count_documents({"embedding": {"$exists": False}})
+        pending_filter = {
+            "$or": [
+                {"embedding": {"$exists": False}},
+                {"embedding": []},
+                {"embedding.383": {"$exists": False}},
+                {"trip_summary": {"$exists": False}},
+                {"trip_summary": ""},
+            ]
+        }
+        total_pending = collection.count_documents(pending_filter)
         logger.info("%d documents need embeddings.", total_pending)
 
         if total_pending == 0:
             logger.info("All documents already have embeddings — nothing to do.")
             return 0
 
-        pipeline = [{"$match": {"embedding": {"$exists": False}}}, *_ENRICH_STAGES]
+        pipeline = [{"$match": pending_filter}, *_ENRICH_STAGES]
         docs = list(collection.aggregate(pipeline))
 
         updated = 0

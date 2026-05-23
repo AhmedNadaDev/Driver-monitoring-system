@@ -9,6 +9,9 @@ const pageTitles = {
   '/routes':   'Routes',
   '/buses':    'Buses',
   '/chatbot':  'Fleet AI Chatbot',
+  '/profile':  'My Profile',
+  '/admins':   'Admin Management',
+  '/history':  'Audit History',
 }
 
 /** Routes that should fill the full remaining height without scroll padding */

@@ -1,0 +1,10 @@
+{
+  "run_at": "2026-05-09T12:23:07.167063+00:00",
+  "total_trips": 10,
+  "embedded_trips": 0,
+  "sample_size": 10,
+  "pipeline": "Atlas VectorSearch (top-10) \u2192 cosine re-ranker (top-5)",
+  "strategies": {},
+  "overall": {},
+  "error": "No embedded trips found. Run: python main.py --embed"
+}
