@@ -26,6 +26,7 @@ const env = {
   DROWSY_EVENT_MIN_CONF:    Number(process.env.DROWSY_EVENT_MIN_CONF    || 0.35),
   CELLPHONE_EVENT_MIN_CONF: Number(process.env.CELLPHONE_EVENT_MIN_CONF || 0.3),
   BELT_EVENT_MIN_CONF:      Number(process.env.BELT_EVENT_MIN_CONF      || 0.3),
+  STEERING_EVENT_MIN_CONF:  Number(process.env.STEERING_EVENT_MIN_CONF  || 0.3),
 
   MAX_FRAME_BYTES: Number(process.env.MAX_FRAME_BYTES || 400000),
 

@@ -19,6 +19,8 @@ export default function StatusPanel({
   beltConfidence,
   cellphoneLabel,
   cellphoneConfidence,
+  steeringLabel,
+  steeringConfidence,
   lastEvent
 }) {
   const smokingText = smokingLabel === 'none' ? 'None' : smokingLabel;
@@ -32,6 +34,9 @@ export default function StatusPanel({
   const cellphoneText = cellphoneLabel === 'cellphone' ? 'Holding phone' : cellphoneLabel === 'none' ? 'None' : cellphoneLabel ?? '—';
   const cellphoneConfText =
     typeof cellphoneConfidence === 'number' ? `${Math.round(cellphoneConfidence * 100)}%` : '—';
+  const steeringText = steeringLabel === 'hands_on_wheel' ? 'Hands on' : steeringLabel === 'hands_off_wheel' ? 'Hands off' : steeringLabel ?? '—';
+  const steeringConfText =
+    typeof steeringConfidence === 'number' ? `${Math.round(steeringConfidence * 100)}%` : '—';
 
   return (
     <div className="mt-3 rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-3">
@@ -62,6 +67,9 @@ export default function StatusPanel({
         </div>
         <div>
           <LabelValue label="Cellphone" value={`${cellphoneText} (${cellphoneConfText})`} />
+        </div>
+        <div>
+          <LabelValue label="Steering" value={`${steeringText} (${steeringConfText})`} />
         </div>
       </div>
 

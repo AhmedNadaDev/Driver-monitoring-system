@@ -36,6 +36,12 @@ class CellphonePrediction(BaseModel):
     boxes: List[Box]
 
 
+class SteeringPrediction(BaseModel):
+    detected: bool  # True = hands on wheel (safe); False = hands off (danger)
+    label: Optional[str]  # 'hands_on_wheel' | 'hands_off_wheel'
+    confidence: float
+
+
 class PredictRequest(BaseModel):
     imageBase64: str
     imageMime: str = 'image/jpeg'
@@ -49,4 +55,5 @@ class PredictResponse(BaseModel):
     drowsiness: DrowsinessPrediction
     belt: BeltPrediction
     cellphone: CellphonePrediction
+    steering: SteeringPrediction
 

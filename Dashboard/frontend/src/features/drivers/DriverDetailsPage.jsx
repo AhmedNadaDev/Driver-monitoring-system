@@ -22,13 +22,16 @@ const fmt = (d, style = 'date') => {
 }
 
 const VIOLATION_META = {
-  drowsy:     { label: 'Drowsy Driving', color: 'bg-amber-100  text-amber-700  dark:bg-amber-500/15  dark:text-amber-400',  dot: '#f59e0b' },
-  cellphone:  { label: 'Phone Use',      color: 'bg-blue-100   text-blue-700   dark:bg-blue-500/15   dark:text-blue-400',   dot: '#3b82f6' },
-  cigarettes: { label: 'Smoking',        color: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400', dot: '#f97316' },
-  vape:       { label: 'Vaping',         color: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400', dot: '#a855f7' },
-  no_belt:    { label: 'No Seat Belt',   color: 'bg-red-100    text-red-700    dark:bg-red-500/15    dark:text-red-400',    dot: '#ef4444' },
+  drowsy:           { label: 'Drowsy Driving',  color: 'bg-amber-100  text-amber-700  dark:bg-amber-500/15  dark:text-amber-400',  dot: '#f59e0b' },
+  cellphone:        { label: 'Phone Use',       color: 'bg-blue-100   text-blue-700   dark:bg-blue-500/15   dark:text-blue-400',   dot: '#3b82f6' },
+  cigarettes:       { label: 'Smoking',         color: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400', dot: '#f97316' },
+  vape:             { label: 'Vaping',          color: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400', dot: '#a855f7' },
+  no_belt:          { label: 'No Seat Belt',    color: 'bg-red-100    text-red-700    dark:bg-red-500/15    dark:text-red-400',    dot: '#ef4444' },
+  hands_off_wheel:  { label: 'Hands Off Wheel', color: 'bg-cyan-100   text-cyan-700   dark:bg-cyan-500/15   dark:text-cyan-400',   dot: '#06b6d4' },
+  speed_violation:  { label: 'Speed Violation', color: 'bg-red-100    text-red-700    dark:bg-red-500/15    dark:text-red-400',    dot: '#dc2626' },
+  harsh_braking:    { label: 'Harsh Braking',   color: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400', dot: '#ea580c' },
 }
-const TYPE_ORDER = ['drowsy', 'cellphone', 'cigarettes', 'vape', 'no_belt']
+const TYPE_ORDER = ['drowsy', 'cellphone', 'cigarettes', 'vape', 'no_belt', 'hands_off_wheel', 'speed_violation', 'harsh_braking']
 
 const groupByType = (violations = []) => {
   const g = {}

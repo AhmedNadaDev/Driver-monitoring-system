@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 
 from ultralytics.engine.results import Results
 
-from app.config import CONF_THRES, DROWSINESS_CONF_THRES, DEVICE, SMOKING_IMGSZ, DROWSINESS_IMGSZ, BELT_IMGSZ, CELLPHONE_IMGSZ
+from app.config import CONF_THRES, DROWSINESS_CONF_THRES, DEVICE, SMOKING_IMGSZ, DROWSINESS_IMGSZ, BELT_IMGSZ, CELLPHONE_IMGSZ, STEERING_IMGSZ
 from app.inference.model_loader import registry
 
 
@@ -149,5 +149,32 @@ def predict_cellphone(image) -> Dict[str, Any]:
         'label': top['label'],
         'confidence': float(top['confidence']),
         'boxes': boxes
+    }
+
+
+def predict_steering(image) -> Dict[str, Any]:
+    """
+    Classification model (no bounding boxes).
+    detected=True means hands ARE on the wheel (safe).
+    detected=False means hands are OFF the wheel (danger).
+    """
+    if not registry.loaded or registry.steering_model is None:
+        raise RuntimeError('Steering model not loaded')
+
+    result = _run_model(registry.steering_model, image, STEERING_IMGSZ)
+
+    # Classification models return result.probs instead of result.boxes
+    if result is None or result.probs is None:
+        return {'detected': False, 'label': 'hands_off_wheel', 'confidence': 0.0}
+
+    probs = result.probs
+    top_class_id = int(probs.top1)
+    top_conf = float(probs.top1conf)
+    label = registry.steering_label_map.get(top_class_id, 'hands_off_wheel')
+
+    return {
+        'detected': label == 'hands_on_wheel',
+        'label': label,
+        'confidence': top_conf,
     }
 

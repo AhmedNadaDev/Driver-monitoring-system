@@ -30,10 +30,11 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
       const predictions = await aiClient.predict({ imageBase64, imageMime, width, height });
       if (!predictions?.success) throw new Error('AI service returned unsuccessful response');
 
-      const smokingPred   = predictions.smoking    || {};
+      const smokingPred    = predictions.smoking    || {};
       const drowsinessPred = predictions.drowsiness || {};
-      const beltPred      = predictions.belt       || {};
-      const cellphonePred = predictions.cellphone  || {};
+      const beltPred       = predictions.belt       || {};
+      const cellphonePred  = predictions.cellphone  || {};
+      const steeringPred   = predictions.steering   || {};
 
       const smokingLabel      = smokingPred.detected ? smokingPred.label : 'none';
       const smokingConfidence = typeof smokingPred.confidence === 'number' ? smokingPred.confidence : null;
@@ -45,12 +46,16 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
       const cellphoneLabel = cellphonePred.detected ? 'cellphone' : 'none';
       const cellphoneConfidence =
         typeof cellphonePred.confidence === 'number' ? cellphonePred.confidence : null;
+      const steeringLabel  = steeringPred.detected ? 'hands_on_wheel' : 'hands_off_wheel';
+      const steeringConfidence =
+        typeof steeringPred.confidence === 'number' ? steeringPred.confidence : null;
 
-      // Update live app state (unchanged).
+      // Update live app state.
       appState.smoking    = { label: smokingLabel,    confidence: smokingConfidence };
       appState.drowsiness = { label: drowsinessLabel, confidence: drowsinessConfidence };
       appState.belt       = { label: beltLabel,       confidence: beltConfidence };
       appState.cellphone  = { label: cellphoneLabel,  confidence: cellphoneConfidence };
+      appState.steering   = { label: steeringLabel,   confidence: steeringConfidence };
       appState.lastEvents = eventLogger.getLastEvents();
 
       const livePayload = {
@@ -59,6 +64,7 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
         drowsiness: appState.drowsiness,
         belt:       appState.belt,
         cellphone:  appState.cellphone,
+        steering:   appState.steering,
         lastEvents: appState.lastEvents,
         // Echo back the active trip id so the UI can confirm it.
         tripId,
@@ -143,6 +149,21 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
         }
       }
 
+      // ── Hands Off Wheel ──────────────────────────────────────────────────
+      if (!steeringPred.detected && steeringPred.confidence > 0) {
+        const conf = typeof steeringPred.confidence === 'number' ? steeringPred.confidence : 0;
+        if (conf >= config.STEERING_EVENT_MIN_CONF && cooldownManager.isAllowed('hands_off_wheel', now)) {
+          const record = await eventLogger.saveEvent({
+            type: 'hands_off_wheel', confidence: conf,
+            source: 'webcam', model: 'steering-model', imageBuffer,
+            driverId, routeId, busId, tripId, alertConfig,
+          });
+          cooldownManager.markTriggered('hands_off_wheel', now);
+          savedEvents.push(record);
+          io.emit('eventSaved', record);
+        }
+      }
+
       appState.lastEvents = eventLogger.getLastEvents();
 
       return res.json({
@@ -152,6 +173,7 @@ function createInferController({ config, aiClient, eventLogger, cooldownManager,
         drowsiness: appState.drowsiness,
         belt:       appState.belt,
         cellphone:  appState.cellphone,
+        steering:   appState.steering,
         lastEvents: appState.lastEvents,
         savedEvents,
         tripId,

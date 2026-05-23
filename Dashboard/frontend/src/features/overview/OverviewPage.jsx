@@ -9,11 +9,14 @@ import { notifications, safetyScoreHistory } from '../../data/mockData.js'
 
 /* ── Violation type config ───────────────────────────────────────────── */
 const V_CONFIG = {
-  drowsy:     { label: 'Drowsy Driving', color: '#f59e0b' },
-  cellphone:  { label: 'Phone Use',      color: '#3b82f6' },
-  cigarettes: { label: 'Smoking',        color: '#f97316' },
-  vape:       { label: 'Vaping',         color: '#a855f7' },
-  no_belt:    { label: 'No Seat Belt',   color: '#ef4444' },
+  drowsy:           { label: 'Drowsy Driving',  color: '#f59e0b' },
+  cellphone:        { label: 'Phone Use',       color: '#3b82f6' },
+  cigarettes:       { label: 'Smoking',         color: '#f97316' },
+  vape:             { label: 'Vaping',          color: '#a855f7' },
+  no_belt:          { label: 'No Seat Belt',    color: '#ef4444' },
+  hands_off_wheel:  { label: 'Hands Off Wheel', color: '#06b6d4' },
+  speed_violation:  { label: 'Speed Violation', color: '#dc2626' },
+  harsh_braking:    { label: 'Harsh Braking',   color: '#ea580c' },
 }
 
 /* ── Custom Pie tooltip ─────────────────────────────────────────────── */
@@ -43,8 +46,12 @@ const AreaTooltip = ({ active, payload, label }) => {
   )
 }
 
+const NGROK_H = { 'ngrok-skip-browser-warning': 'true' }
+
 /* ── Component ──────────────────────────────────────────────────────── */
 const OverviewPage = () => {
+  const BACKEND = import.meta.env.VITE_BACKEND_URL || ''
+
   const [routeCount,       setRouteCount]       = useState(null)
   const [busCount,         setBusCount]         = useState(null)
   const [driverCount,      setDriverCount]      = useState(null)
@@ -54,10 +61,10 @@ const OverviewPage = () => {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/drivers').then((r) => r.json()).catch(() => []),
-      fetch('/api/routes').then((r)  => r.json()).catch(() => []),
-      fetch('/api/buses').then((r)   => r.json()).catch(() => []),
-      fetch('/api/violations').then((r) => r.json()).catch(() => []),
+      fetch(`${BACKEND}/api/drivers`,    { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
+      fetch(`${BACKEND}/api/routes`,     { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
+      fetch(`${BACKEND}/api/buses`,      { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
+      fetch(`${BACKEND}/api/violations`, { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
     ]).then(([drvs, rts, bss, viols]) => {
       /* Drivers */
       const driverList = Array.isArray(drvs) ? drvs : []

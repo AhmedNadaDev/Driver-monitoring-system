@@ -59,3 +59,18 @@ def build_cellphone_label_map(names_by_id: dict) -> dict:
             label_map[int(class_id)] = 'no_cellphone'
     return label_map
 
+
+def build_steering_label_map(names_by_id: dict) -> dict:
+    """
+    Returns mapping: class_id -> one of {'hands_on_wheel', 'hands_off_wheel'}
+    based on the YOLOv8 classification model's native `names`.
+    """
+    label_map = {}
+    for class_id, raw_name in (names_by_id or {}).items():
+        n = _normalize_name(str(raw_name))
+        if 'off' in n.split() or 'no' in n.split():
+            label_map[int(class_id)] = 'hands_off_wheel'
+        else:
+            label_map[int(class_id)] = 'hands_on_wheel'
+    return label_map
+

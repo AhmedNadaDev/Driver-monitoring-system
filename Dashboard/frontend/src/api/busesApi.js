@@ -1,4 +1,8 @@
-const BASE = '/api/buses'
+const BACKEND = import.meta.env.VITE_BACKEND_URL || ''
+const BASE = `${BACKEND}/api/buses`
+
+const H = { 'ngrok-skip-browser-warning': 'true' }
+const J = { 'Content-Type': 'application/json', ...H }
 
 const handleResponse = async (res) => {
   const json = await res.json()
@@ -6,22 +10,21 @@ const handleResponse = async (res) => {
   return json
 }
 
-export const fetchBuses = () => fetch(BASE).then(handleResponse)
+export const fetchBuses = () => fetch(BASE, { headers: H }).then(handleResponse)
 
-// busId is auto-generated; only capacity is sent
 export const createBus = ({ capacity }) =>
   fetch(BASE, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: J,
     body: JSON.stringify({ capacity }),
   }).then(handleResponse)
 
 export const updateBus = (id, { capacity }) =>
   fetch(`${BASE}/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: J,
     body: JSON.stringify({ capacity }),
   }).then(handleResponse)
 
 export const deleteBus = (id) =>
-  fetch(`${BASE}/${id}`, { method: 'DELETE' }).then(handleResponse)
+  fetch(`${BASE}/${id}`, { method: 'DELETE', headers: H }).then(handleResponse)

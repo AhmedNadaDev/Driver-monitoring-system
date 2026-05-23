@@ -1,17 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import StatusPanel from '../components/StatusPanel.jsx';
+import DrivingSafetyPanel from '../components/DrivingSafetyPanel.jsx';
 import { createSocket } from '../lib/socket.js';
-import { fetchDrivers, fetchRoutes, fetchBuses, startTrip, stopTrip } from '../lib/api.js';
+import { fetchDrivers, fetchRoutes, fetchBuses, startTrip, stopTrip, postSafetyEvent } from '../lib/api.js';
+import { useGPS } from '../hooks/useGPS.js';
+import { useHarshBraking } from '../hooks/useHarshBraking.js';
+import { useSpeedLimit } from '../hooks/useSpeedLimit.js';
 
 const DEFAULT_INFERENCE_INTERVAL_MS = 500;
 const DEFAULT_CAPTURE_QUALITY       = 0.75;
 const DEFAULT_CAPTURE_MAX_EDGE      = 960;
+const DEFAULT_SPEED_LIMIT_KMH       = 80;
+
+// Sent with every fetch so ngrok's interstitial page is bypassed for API calls.
+// Harmless when the backend is not behind ngrok.
+const NGROK_HEADER = { 'ngrok-skip-browser-warning': 'true' };
 
 export default function WebcamMonitorPage() {
-  const backendUrl         = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+  const backendUrl          = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
   const inferenceIntervalMs = Number(import.meta.env.VITE_INFERENCE_INTERVAL_MS || DEFAULT_INFERENCE_INTERVAL_MS);
-  const captureQuality     = Number(import.meta.env.VITE_CAPTURE_QUALITY || DEFAULT_CAPTURE_QUALITY);
-  const captureMaxEdge     = Number(import.meta.env.VITE_CAPTURE_MAX_EDGE || DEFAULT_CAPTURE_MAX_EDGE);
+  const captureQuality      = Number(import.meta.env.VITE_CAPTURE_QUALITY || DEFAULT_CAPTURE_QUALITY);
+  const captureMaxEdge      = Number(import.meta.env.VITE_CAPTURE_MAX_EDGE || DEFAULT_CAPTURE_MAX_EDGE);
+  const speedLimit          = Number(import.meta.env.VITE_SPEED_LIMIT_KMH  || DEFAULT_SPEED_LIMIT_KMH);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const videoRef   = useRef(null);
@@ -19,17 +29,25 @@ export default function WebcamMonitorPage() {
   const socketRef  = useRef(null);
   const sendingRef = useRef(false);
 
+  // Stable ref to the active trip so sensor callbacks always see the latest value.
+  const activeTripRef = useRef(null);
+
   // ── Connection & Camera state ─────────────────────────────────────────────
   const [backendConnected, setBackendConnected] = useState(false);
   const [aiReachable,      setAiReachable]      = useState(null);
   const [cameraActive,     setCameraActive]     = useState(false);
+  const [facingMode,       setFacingMode]       = useState('user');
 
   // ── Detection state (live, unchanged) ────────────────────────────────────
   const [smoking,   setSmoking]   = useState({ label: 'none',  confidence: null });
   const [alertness, setAlertness] = useState({ label: 'awake', confidence: null });
   const [belt,      setBelt]      = useState({ label: 'belt',  confidence: null });
   const [cellphone, setCellphone] = useState({ label: 'none',  confidence: null });
+  const [steering,  setSteering]  = useState({ label: 'hands_on_wheel', confidence: null });
   const [lastEvent, setLastEvent] = useState(null);
+
+  // ── Driving safety state ──────────────────────────────────────────────────
+  const [lastSafetyEvent, setLastSafetyEvent] = useState(null);
 
   // ── Dropdown data ─────────────────────────────────────────────────────────
   const [drivers, setDrivers] = useState([]);
@@ -42,9 +60,12 @@ export default function WebcamMonitorPage() {
   const [selectedBus,    setSelectedBus]    = useState('');
 
   // ── Active trip state ─────────────────────────────────────────────────────
-  const [activeTrip,    setActiveTrip]    = useState(null);  // full trip object
-  const [tripLoading,   setTripLoading]   = useState(false);
-  const [tripError,     setTripError]     = useState(null);
+  const [activeTrip,  setActiveTrip]  = useState(null);
+  const [tripLoading, setTripLoading] = useState(false);
+  const [tripError,   setTripError]   = useState(null);
+
+  // Keep ref in sync so sensor callbacks don't capture stale closures.
+  useEffect(() => { activeTripRef.current = activeTrip; }, [activeTrip]);
 
   // ── Socket.IO ─────────────────────────────────────────────────────────────
   const socket = useMemo(() => createSocket(backendUrl), [backendUrl]);
@@ -62,11 +83,17 @@ export default function WebcamMonitorPage() {
       if (payload.drowsiness) setAlertness({ label: payload.drowsiness.label || 'awake', confidence: payload.drowsiness.confidence ?? null });
       if (payload.belt)       setBelt({      label: payload.belt.label       || 'no_belt',confidence: payload.belt.confidence       ?? null });
       if (payload.cellphone)  setCellphone({ label: payload.cellphone.label  || 'none',  confidence: payload.cellphone.confidence  ?? null });
+      if (payload.steering)   setSteering({  label: payload.steering.label   || 'hands_on_wheel', confidence: payload.steering.confidence ?? null });
       if (payload.lastEvents?.last) setLastEvent(payload.lastEvents.last);
     });
 
     socket.on('eventSaved', (event) => {
       if (event?.timestamp) setLastEvent(event);
+    });
+
+    // Reflect safety events emitted by the backend to other clients.
+    socket.on('safetyEvent', (event) => {
+      if (event?.timestamp) setLastSafetyEvent(event);
     });
 
     return () => { socket.off(); socket.close(); };
@@ -75,7 +102,7 @@ export default function WebcamMonitorPage() {
   // ── Prime status on mount ─────────────────────────────────────────────────
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`${backendUrl}/api/status`, { signal: controller.signal })
+    fetch(`${backendUrl}/api/status`, { signal: controller.signal, headers: NGROK_HEADER })
       .then((r) => r.json())
       .then((data) => {
         if (typeof data.aiServiceReachable === 'boolean') setAiReachable(data.aiServiceReachable);
@@ -83,6 +110,7 @@ export default function WebcamMonitorPage() {
         if (data.drowsiness) setAlertness({ label: data.drowsiness.label, confidence: data.drowsiness.confidence });
         if (data.belt)       setBelt({      label: data.belt.label,       confidence: data.belt.confidence       });
         if (data.cellphone)  setCellphone({ label: data.cellphone.label,  confidence: data.cellphone.confidence  });
+        if (data.steering)   setSteering({  label: data.steering.label,   confidence: data.steering.confidence   });
         if (data.lastEvents?.last) setLastEvent(data.lastEvents.last);
       })
       .catch(() => {});
@@ -96,13 +124,13 @@ export default function WebcamMonitorPage() {
     fetchBuses().then(setBuses).catch(() => {});
   }, []);
 
-  // ── Camera init (unchanged) ───────────────────────────────────────────────
+  // ── Camera init ───────────────────────────────────────────────────────────
   useEffect(() => {
     let stream;
     async function startCamera() {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
         if (!videoRef.current) throw new Error('video ref missing');
@@ -115,7 +143,7 @@ export default function WebcamMonitorPage() {
     }
     startCamera();
     return () => { if (stream) stream.getTracks().forEach((t) => t.stop()); };
-  }, []);
+  }, [facingMode]);
 
   // ── Inference loop — only runs when a trip is active ─────────────────────
   useEffect(() => {
@@ -172,7 +200,7 @@ export default function WebcamMonitorPage() {
 
       const res = await fetch(`${backendUrl}/api/infer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...NGROK_HEADER },
         body: JSON.stringify({
           imageBase64: base64,
           imageMime:   'image/jpeg',
@@ -194,6 +222,7 @@ export default function WebcamMonitorPage() {
       if (data.drowsiness) setAlertness({ label: data.drowsiness.label, confidence: data.drowsiness.confidence });
       if (data.belt)       setBelt({      label: data.belt.label,       confidence: data.belt.confidence       });
       if (data.cellphone)  setCellphone({ label: data.cellphone.label,  confidence: data.cellphone.confidence  });
+      if (data.steering)   setSteering({  label: data.steering.label,   confidence: data.steering.confidence   });
       if (Array.isArray(data.savedEvents) && data.savedEvents.length > 0) {
         setLastEvent(data.savedEvents[data.savedEvents.length - 1]);
       }
@@ -239,6 +268,52 @@ export default function WebcamMonitorPage() {
       setTripLoading(false);
     }
   }
+
+  // ── Sensor violation handler (shared by GPS + braking hooks) ─────────────
+  const handleSensorViolation = useCallback(async (payload) => {
+    const trip = activeTripRef.current;
+    try {
+      const result = await postSafetyEvent({
+        type:       payload.type,
+        speed:      payload.speed      ?? null,
+        speedLimit: payload.speedLimit ?? null,
+        location:   payload.location   ?? null,
+        driverId:   trip?.driver || null,
+        routeId:    trip?.route  || null,
+        busId:      trip?.bus    || null,
+        tripId:     trip?._id    || null,
+      });
+      if (result?.event) setLastSafetyEvent(result.event);
+    } catch {
+      // Best-effort: sensor events must not disrupt the main monitoring pipeline.
+    }
+  }, []);
+
+  // ── GPS tracking (phase 1: start with env default limit) ─────────────────
+  // speedLimit prop is updated each render via ref inside the hook — no restart.
+  const [effectiveSpeedLimit, setEffectiveSpeedLimit] = useState(speedLimit);
+
+  const gps = useGPS({
+    enabled:     !!activeTrip,
+    speedLimit:  effectiveSpeedLimit,
+    onViolation: handleSensorViolation,
+  });
+
+  // ── Auto-detect road speed limit from OpenStreetMap ───────────────────────
+  const { speedLimit: detectedLimit, detecting: detectingLimit, source: limitSource, roadType: limitRoadType } = useSpeedLimit(
+    activeTrip ? gps.location : null
+  );
+
+  // When Overpass returns a limit, promote it to the effective limit.
+  useEffect(() => {
+    if (detectedLimit != null) setEffectiveSpeedLimit(detectedLimit);
+  }, [detectedLimit]);
+
+  // ── Harsh braking — active only during an active trip ────────────────────
+  const braking = useHarshBraking({
+    enabled:    !!activeTrip,
+    onViolation: handleSensorViolation,
+  });
 
   // ── Derived display info ──────────────────────────────────────────────────
   const activeDriverName = drivers.find((d) => d._id === selectedDriver)?.name || '—';
@@ -358,7 +433,25 @@ export default function WebcamMonitorPage() {
                 <span className="ml-2 text-xs text-amber-400">(Start a trip to begin detection)</span>
               ) : null}
             </div>
-            <div className="text-xs text-gray-500">Inference: {inferenceIntervalMs}ms</div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-gray-500">Inference: {inferenceIntervalMs}ms</div>
+              {cameraActive && (
+                <button
+                  onClick={() => setFacingMode((m) => m === 'user' ? 'environment' : 'user')}
+                  title="Flip camera"
+                  className="flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs font-medium text-gray-300 transition hover:border-gray-600 hover:bg-gray-700 hover:text-white"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" />
+                    <path d="M13 5h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-5" />
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="m18 22-3-3 3-3" />
+                    <path d="m6 2 3 3-3 3" />
+                  </svg>
+                  Flip
+                </button>
+              )}
+            </div>
           </div>
 
           <video
@@ -370,7 +463,7 @@ export default function WebcamMonitorPage() {
           />
         </div>
 
-        {/* ── Detection Status Panel (unchanged props) ──────────────────── */}
+        {/* ── Detection Status Panel (unchanged) ───────────────────────── */}
         <StatusPanel
           backendConnected={backendConnected}
           aiReachable={aiReachable}
@@ -383,7 +476,26 @@ export default function WebcamMonitorPage() {
           beltConfidence={belt.confidence}
           cellphoneLabel={cellphone.label}
           cellphoneConfidence={cellphone.confidence}
+          steeringLabel={steering.label}
+          steeringConfidence={steering.confidence}
           lastEvent={lastEvent}
+        />
+
+        {/* ── Driving Safety Panel (GPS + harsh braking) ───────────────── */}
+        <DrivingSafetyPanel
+          gpsSpeed={gps.speed}
+          gpsActive={gps.active}
+          gpsError={gps.error}
+          motionActive={braking.active}
+          motionError={braking.error}
+          motionPermissionNeeded={braking.permissionNeeded}
+          onRequestMotionPermission={braking.requestIOSPermission}
+          lastSafetyEvent={lastSafetyEvent}
+          speedLimit={effectiveSpeedLimit}
+          detectedLimit={detectedLimit}
+          detectingLimit={detectingLimit}
+          limitSource={limitSource}
+          limitRoadType={limitRoadType}
         />
 
       </div>

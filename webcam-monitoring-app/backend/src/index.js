@@ -17,6 +17,8 @@ const createHealthController = require('./controllers/healthController');
 const createStatusController = require('./controllers/statusController');
 const createLogsController = require('./controllers/logsController');
 const createLastEventsController = require('./controllers/lastEventsController');
+const { createSafetyEventController, getSafetyEvents } = require('./controllers/safetyEventController');
+const { getSpeedLimit } = require('./services/speedLimitService');
 const { startTrip, stopTrip } = require('./controllers/tripController');
 const { getDrivers, getRoutes, getBuses } = require('./controllers/dataController');
 const alertsRouter = require('./routes/alerts');
@@ -33,12 +35,26 @@ async function main() {
   const app = express();
   app.disable('x-powered-by');
 
-  app.use(
-    cors({
-      origin: config.FRONTEND_ORIGIN,
-      credentials: true,
-    })
-  );
+  // ── CORS ───────────────────────────────────────────────────────────────────
+  // origin: true  →  echo back whatever Origin the browser sends.
+  // Safe because this backend is only reachable via the private ngrok URL.
+  // Compatible with credentials:true (unlike wildcard '*').
+  const CORS_OPTIONS = {
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
+  };
+
+  // Preflight must be handled BEFORE any other middleware.
+  app.options('*', cors(CORS_OPTIONS));
+  app.use(cors(CORS_OPTIONS));
+
+  // ── Debug logging (remove once deployment is stable) ──────────────────────
+  app.use((req, _res, next) => {
+    console.log(`[${req.method}] ${req.path}  origin: ${req.headers.origin || '(none)'}`);
+    next();
+  });
 
   // Serve snapshot images.  Allow any origin so <img> tags in any frontend
   // (dashboard at :5173, webcam UI at :5174) can load images without CORS errors.
@@ -52,8 +68,9 @@ async function main() {
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: config.FRONTEND_ORIGIN,
+      origin: true,
       credentials: true,
+      methods: ['GET', 'POST', 'OPTIONS'],
     },
   });
 
@@ -63,6 +80,7 @@ async function main() {
     drowsiness: { label: 'awake',  confidence: null },
     belt:       { label: 'belt',   confidence: null },
     cellphone:  { label: 'none',   confidence: null },
+    steering:   { label: 'hands_on_wheel', confidence: null },
     lastEvents: null,
   };
 
@@ -128,6 +146,8 @@ async function main() {
     alertConfig,
   });
 
+  const safetyEventController = createSafetyEventController({ io });
+
   // ── Socket.IO ────────────────────────────────────────────────────────────
   io.on('connection', (socket) => {
     socket.emit('liveStatus', {
@@ -136,6 +156,7 @@ async function main() {
       drowsiness: appState.drowsiness,
       belt:       appState.belt,
       cellphone:  appState.cellphone,
+      steering:   appState.steering,
       lastEvents: appState.lastEvents,
     });
   });
@@ -163,6 +184,25 @@ async function main() {
   app.get('/api/drivers', getDrivers);
   app.get('/api/routes',  getRoutes);
   app.get('/api/buses',   getBuses);
+
+  // ── Routes: Driving safety events (GPS + harsh braking) ─────────────────
+  app.get('/api/safety-events',  getSafetyEvents);
+  app.post('/api/safety-events', safetyEventController);
+
+  // ── Route: Speed limit lookup via OpenStreetMap Overpass ─────────────────
+  app.get('/api/speed-limit', async (req, res) => {
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    if (isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ error: 'lat and lng query params are required' });
+    }
+    try {
+      const result = await getSpeedLimit(lat, lng);
+      return res.json(result ?? { limit: null });
+    } catch {
+      return res.json({ limit: null });
+    }
+  });
 
   // ── Routes: Smart Alerts ─────────────────────────────────────────────────
   app.use('/api/alerts', alertsRouter);

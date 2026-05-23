@@ -2,15 +2,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import FastAPI, HTTPException
 
 from app.inference.model_loader import registry
-from app.inference.predictor import predict_smoking, predict_drowsiness, predict_belt, predict_cellphone
+from app.inference.predictor import predict_smoking, predict_drowsiness, predict_belt, predict_cellphone, predict_steering
 from app.schemas import PredictRequest, PredictResponse
 from app.utils.image_utils import decode_image, resize_to_max_edge
 
 
 app = FastAPI(title='YOLO Inference Service')
 
-# 4 workers — one per model, so all run in parallel on separate CPU cores.
-_executor = ThreadPoolExecutor(max_workers=4)
+# 5 workers — one per model, so all run in parallel on separate CPU cores.
+_executor = ThreadPoolExecutor(max_workers=5)
 
 
 @app.on_event('startup')
@@ -27,6 +27,7 @@ def health():
         'drowsiness_label_map': registry.drowsiness_label_map,
         'belt_label_map': registry.belt_label_map,
         'cellphone_label_map': registry.cellphone_label_map,
+        'steering_label_map': registry.steering_label_map,
     }
 
 
@@ -45,6 +46,7 @@ def predict(req: PredictRequest):
             'drowsiness': _executor.submit(predict_drowsiness, image),
             'belt':       _executor.submit(predict_belt,       image),
             'cellphone':  _executor.submit(predict_cellphone,  image),
+            'steering':   _executor.submit(predict_steering,   image),
         }
         results = {name: future.result() for name, future in tasks.items()}
 
@@ -54,6 +56,7 @@ def predict(req: PredictRequest):
             drowsiness=results['drowsiness'],
             belt=results['belt'],
             cellphone=results['cellphone'],
+            steering=results['steering'],
         )
     except HTTPException:
         raise
