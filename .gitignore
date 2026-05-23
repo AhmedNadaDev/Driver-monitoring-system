@@ -17,7 +17,7 @@ dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -33,6 +33,10 @@ dist-ssr
 *.pth
 *.onnx
 **/models/
+
+# Large AI / archive files
+*.rar
+*.zip
 
 # Storage
 **/storage/

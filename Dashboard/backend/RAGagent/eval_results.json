@@ -3,7 +3,7 @@
   "total_trips": 4,
   "embedded_trips": 4,
   "sample_size": 4,
-  "pipeline": "Atlas VectorSearch (top-10) \u2192 cosine re-ranker (top-5)",
+  "pipeline": "Atlas VectorSearch (top-10) → cosine re-ranker (top-5)",
   "strategies": {
     "driver+violation": {
       "queries": 4,

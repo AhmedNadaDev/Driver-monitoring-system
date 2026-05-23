@@ -2,7 +2,9 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Navigation2, Bus,
   ChevronLeft, ChevronRight, Shield, X, Activity, MessageSquare,
+  UserCog, History, User,
 } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 const NAV_GROUPS = [
   {
@@ -24,6 +26,24 @@ const NAV_GROUPS = [
 
 const AppSidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
   const location = useLocation()
+  const { isSuperAdmin } = useAuth()
+
+  const adminNavItems = isSuperAdmin
+    ? [
+        { label: 'Admin Management', path: '/admins', icon: UserCog },
+        { label: 'History', path: '/history', icon: History },
+      ]
+    : []
+
+  const accountNavItems = [{ label: 'Profile', path: '/profile', icon: User }]
+
+  const navGroups = [
+    ...NAV_GROUPS,
+    ...(adminNavItems.length
+      ? [{ label: 'Administration', items: adminNavItems }]
+      : []),
+    { label: 'Account', items: accountNavItems },
+  ]
 
   const sidebarContent = (
     <div
@@ -57,7 +77,7 @@ const AppSidebar = ({ collapsed, onToggle, mobileOpen, onMobileClose }) => {
 
       {/* ── Nav groups ─────────────────────────────────────────────────── */}
       <nav className={`flex-1 overflow-y-auto space-y-1 ${collapsed ? 'px-2 pt-4' : 'px-3 pt-4'}`}>
-        {NAV_GROUPS.map((group) => (
+        {navGroups.map((group) => (
           <div key={group.label}>
             {/* Group label */}
             {!collapsed && (

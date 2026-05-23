@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Pencil, Trash2, Loader2, AlertCircle, Eye, User, Users } from 'lucide-react'
+import {
+  Plus, Search, Pencil, Trash2, Loader2, AlertCircle, Eye, User, Users,
+  Crown, Trophy, Award, TrendingUp, TrendingDown,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import ScoreBadge from '../../shared/components/ScoreBadge.jsx'
 import Modal from '../../shared/components/Modal.jsx'
@@ -31,20 +34,81 @@ const ScoreBar = ({ score }) => {
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-20 rounded-full bg-muted overflow-hidden hidden lg:block">
-        <div
-          className={`h-full rounded-full ${color} transition-all duration-500`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
       <ScoreBadge score={score} />
     </div>
   )
 }
 
+/* ── Rank configuration ──────────────────────────────────────────────── */
+const RANK_META = {
+  1: {
+    Icon:       Crown,
+    badgeBg:    'bg-amber-400/20',
+    badgeRing:  'ring-2 ring-amber-400/50',
+    iconColor:  'text-amber-400',
+    rowBg:      'from-amber-400/[0.07] to-transparent',
+    rowShadow:  'inset 3px 0 0 rgba(251,191,36,0.55)',
+    cardBorder: 'border-amber-400/40',
+    cardShadow: 'shadow-lg shadow-amber-400/15',
+  },
+  2: {
+    Icon:       Trophy,
+    badgeBg:    'bg-slate-400/15',
+    badgeRing:  'ring-2 ring-slate-400/40',
+    iconColor:  'text-slate-400',
+    rowBg:      'from-slate-400/[0.05] to-transparent',
+    rowShadow:  'inset 3px 0 0 rgba(148,163,184,0.4)',
+    cardBorder: 'border-slate-400/30',
+    cardShadow: 'shadow-lg shadow-slate-400/10',
+  },
+  3: {
+    Icon:       Award,
+    badgeBg:    'bg-orange-500/15',
+    badgeRing:  'ring-2 ring-orange-500/35',
+    iconColor:  'text-orange-500',
+    rowBg:      'from-orange-500/[0.05] to-transparent',
+    rowShadow:  'inset 3px 0 0 rgba(249,115,22,0.4)',
+    cardBorder: 'border-orange-500/28',
+    cardShadow: 'shadow-lg shadow-orange-500/10',
+  },
+}
+
+/* ── Rank badge ──────────────────────────────────────────────────────── */
+const RankBadge = ({ rank }) => {
+  const meta = RANK_META[rank]
+  if (!meta) return (
+    <span className="inline-flex w-7 h-7 items-center justify-center font-mono text-xs font-bold text-muted-foreground/40">
+      {rank}
+    </span>
+  )
+  const { Icon, badgeBg, badgeRing, iconColor } = meta
+  return (
+    <span className={`inline-flex w-7 h-7 items-center justify-center rounded-lg ${badgeBg} ${badgeRing} shrink-0`}>
+      <Icon className={`h-3.5 w-3.5 ${iconColor}`} />
+    </span>
+  )
+}
+
+/* ── Filter options ──────────────────────────────────────────────────── */
+const FILTER_OPTIONS = [
+  { key: 'all',    Icon: Users,        label: 'All Drivers'    },
+  { key: 'top',    Icon: TrendingUp,   label: 'Top Scoring'    },
+  { key: 'lowest', Icon: TrendingDown, label: 'Lowest Scoring' },
+]
+
+const FILTER_ACTIVE_STYLES = {
+  all:    'bg-primary/15 text-primary ring-2 ring-primary/20 shadow-sm',
+  top:    'bg-amber-400/20 text-amber-600 dark:text-amber-400 ring-2 ring-amber-400/30 shadow-sm',
+  lowest: 'bg-red-500/15 text-red-600 dark:text-red-400 ring-2 ring-red-500/25 shadow-sm',
+}
+
 /* ── Page ────────────────────────────────────────────────────────────── */
 const DriversPage = () => {
   const [drivers,         setDrivers]         = useState([])
   const [search,          setSearch]          = useState('')
+  const [sortFilter,      setSortFilter]      = useState('all')
   const [loading,         setLoading]         = useState(true)
   const [error,           setError]           = useState(null)
   const [deletingId,      setDeletingId]      = useState(null)
@@ -113,6 +177,14 @@ const DriversPage = () => {
       d.id.toLowerCase().includes(search.toLowerCase())
   )
 
+  const sortedFiltered = (() => {
+    const list = [...filtered]
+    if (sortFilter === 'top')    return list.sort((a, b) => (b.avgScore ?? 0) - (a.avgScore ?? 0))
+    if (sortFilter === 'lowest') return list.sort((a, b) => (a.avgScore ?? 0) - (b.avgScore ?? 0))
+    return list
+  })()
+
+  const isRanked = sortFilter === 'top'
   const confirmTarget = drivers.find((d) => d._id === confirmDeleteId)
 
   /* ── Loading ─────────────────────────────────────────────────────── */
@@ -236,8 +308,8 @@ const DriversPage = () => {
             <Users className="h-4 w-4 text-primary" />
           </div>
           <p className="text-sm text-muted-foreground font-medium">
-            <span className="font-bold text-foreground">{filtered.length}</span>{' '}
-            driver{filtered.length !== 1 ? 's' : ''} registered
+            <span className="font-bold text-foreground">{sortedFiltered.length}</span>{' '}
+            driver{sortedFiltered.length !== 1 ? 's' : ''}{search ? ' found' : ' registered'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -260,173 +332,226 @@ const DriversPage = () => {
         </div>
       </div>
 
-      {/* ── Desktop Table ────────────────────────────────────────── */}
-      <div className="rounded-2xl bg-card border border-border/40 shadow-sm overflow-hidden hidden sm:block">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border/40">
-              <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
-                Driver
-              </th>
-              <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
-                ID
-              </th>
-              <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
-                Safety Score
-              </th>
-              <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
-                Trips
-              </th>
-              <th className="px-5 py-3.5 text-right text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/30">
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-5 py-16 text-center text-sm text-muted-foreground">
-                  {search
-                    ? `No drivers matching "${search}"`
-                    : 'No drivers found. Click "Add Driver" to get started.'}
-                </td>
-              </tr>
-            ) : (
-              filtered.map((d, i) => (
-                <tr
-                  key={d._id}
-                  className={`row-hover transition-colors ${i % 2 === 0 ? '' : 'bg-muted/10'}`}
-                >
-                  {/* Driver */}
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${avatarColor(d.name)} text-xs font-bold text-white shadow-sm`}
-                      >
-                        {getInitials(d.name)}
-                      </div>
-                      <span className="font-semibold text-foreground">{d.name}</span>
-                    </div>
-                  </td>
-                  {/* ID */}
-                  <td className="px-5 py-3.5">
-                    <span className="font-mono text-xs text-muted-foreground bg-muted/50 rounded-md px-2 py-0.5">
-                      {d.id}
-                    </span>
-                  </td>
-                  {/* Score */}
-                  <td className="px-5 py-3.5">
-                    <ScoreBar score={d.avgScore} />
-                  </td>
-                  {/* Trips */}
-                  <td className="px-5 py-3.5">
-                    <span className="inline-flex items-center gap-1 text-sm text-muted-foreground font-medium">
-                      {d.totalTrips}
-                      <span className="text-xs text-muted-foreground/60">trips</span>
-                    </span>
-                  </td>
-                  {/* Actions */}
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Link
-                        to={`/drivers/${d._id}`}
-                        title="View details"
-                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-                      >
-                        <Eye className="h-3 w-3" /> View
-                      </Link>
-                      <Link
-                        to={`/drivers/${d._id}/edit`}
-                        title="Edit driver"
-                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-foreground bg-muted hover:bg-muted/80 transition-colors"
-                      >
-                        <Pencil className="h-3 w-3" /> Edit
-                      </Link>
-                      <button
-                        onClick={() => setConfirmDeleteId(d._id)}
-                        title="Delete driver"
-                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
-                      >
-                        <Trash2 className="h-3 w-3" /> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      {/* ── Filter Bar ───────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {FILTER_OPTIONS.map(({ key, Icon, label }) => (
+          <button
+            key={key}
+            onClick={() => setSortFilter(key)}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+              sortFilter === key
+                ? FILTER_ACTIVE_STYLES[key]
+                : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* ── Mobile Cards ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:hidden">
-        {filtered.length === 0 ? (
-          <p className="text-center text-sm text-muted-foreground py-10">
-            {search ? `No drivers matching "${search}"` : 'No drivers found.'}
-          </p>
-        ) : (
-          filtered.map((d) => (
-            <div
-              key={d._id}
-              className="rounded-2xl bg-card border border-border/40 p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${avatarColor(d.name)} text-sm font-bold text-white shadow-sm`}
-                  >
-                    {getInitials(d.name)}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-foreground truncate">{d.name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{d.id}</p>
-                  </div>
-                </div>
-                <ScoreBadge score={d.avgScore} />
-              </div>
+      {/* ── Animated content (re-mounts on filter change to replay fade-in) ── */}
+      <div key={sortFilter} className="space-y-3 animate-fade-up" style={{ animationDuration: '0.2s' }}>
 
-              {/* Score bar */}
-              <div className="mt-3">
-                <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                  <span>Safety Score</span>
-                  <span>{d.totalTrips} trips</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      (d.avgScore ?? 0) >= 90 ? 'bg-emerald-500' :
-                      (d.avgScore ?? 0) >= 75 ? 'bg-blue-500'    :
-                      (d.avgScore ?? 0) >= 60 ? 'bg-amber-500'   :
-                      'bg-red-500'
-                    }`}
-                    style={{ width: `${d.avgScore ?? 0}%` }}
-                  />
-                </div>
-              </div>
+        {/* ── Desktop Table ────────────────────────────────────────── */}
+        <div className="rounded-2xl bg-card border border-border/40 shadow-sm overflow-hidden hidden sm:block">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/40">
+                {isRanked && (
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30 w-16">
+                    Rank
+                  </th>
+                )}
+                <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                  Driver
+                </th>
+                <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                  ID
+                </th>
+                <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                  Safety Score
+                </th>
+                <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                  Trips
+                </th>
+                <th className="px-5 py-3.5 text-right text-[11px] font-semibold text-muted-foreground uppercase tracking-wider bg-muted/30">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/30">
+              {sortedFiltered.length === 0 ? (
+                <tr>
+                  <td colSpan={isRanked ? 6 : 5} className="px-5 py-16 text-center text-sm text-muted-foreground">
+                    {search
+                      ? `No drivers matching "${search}"`
+                      : 'No drivers found. Click "Add Driver" to get started.'}
+                  </td>
+                </tr>
+              ) : (
+                sortedFiltered.map((d, i) => {
+                  const rank = i + 1
+                  const meta = isRanked ? RANK_META[rank] : null
+                  const RankIcon = meta?.Icon
+                  return (
+                    <tr
+                      key={d._id}
+                      className={`transition-colors ${
+                        meta
+                          ? `bg-gradient-to-r ${meta.rowBg}`
+                          : `${i % 2 === 0 ? '' : 'bg-muted/10'} row-hover`
+                      }`}
+                      style={meta ? { boxShadow: meta.rowShadow } : undefined}
+                    >
+                      {isRanked && (
+                        <td className="px-4 py-4">
+                          <RankBadge rank={rank} />
+                        </td>
+                      )}
+                      <td className={`px-5 ${meta ? 'py-4' : 'py-3.5'}`}>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex ${rank === 1 && isRanked ? 'h-10 w-10' : 'h-9 w-9'} shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${avatarColor(d.name)} text-xs font-bold text-white shadow-sm`}
+                          >
+                            {getInitials(d.name)}
+                          </div>
+                          <span className="font-semibold text-foreground">{d.name}</span>
+                        </div>
+                      </td>
+                      <td className={`px-5 ${meta ? 'py-4' : 'py-3.5'}`}>
+                        <span className="font-mono text-xs text-muted-foreground bg-muted/50 rounded-md px-2 py-0.5">
+                          {d.id}
+                        </span>
+                      </td>
+                      <td className={`px-5 ${meta ? 'py-4' : 'py-3.5'}`}>
+                        <ScoreBar score={d.avgScore} />
+                      </td>
+                      <td className={`px-5 ${meta ? 'py-4' : 'py-3.5'}`}>
+                        <span className="inline-flex items-center gap-1 text-sm text-muted-foreground font-medium">
+                          {d.totalTrips}
+                          <span className="text-xs text-muted-foreground/60">trips</span>
+                        </span>
+                      </td>
+                      <td className={`px-5 ${meta ? 'py-4' : 'py-3.5'}`}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Link
+                            to={`/drivers/${d._id}`}
+                            title="View details"
+                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                          >
+                            <Eye className="h-3 w-3" /> View
+                          </Link>
+                          <Link
+                            to={`/drivers/${d._id}/edit`}
+                            title="Edit driver"
+                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-foreground bg-muted hover:bg-muted/80 transition-colors"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </Link>
+                          <button
+                            onClick={() => setConfirmDeleteId(d._id)}
+                            title="Delete driver"
+                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
 
-              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border/30 pt-3">
-                <Link
-                  to={`/drivers/${d._id}`}
-                  className="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+        {/* ── Mobile Cards ──────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 gap-3 sm:hidden">
+          {sortedFiltered.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-10">
+              {search ? `No drivers matching "${search}"` : 'No drivers found.'}
+            </p>
+          ) : (
+            sortedFiltered.map((d, i) => {
+              const rank = i + 1
+              const meta = isRanked ? RANK_META[rank] : null
+              const RankIcon = meta?.Icon
+              return (
+                <div
+                  key={d._id}
+                  className={`rounded-2xl bg-card p-4 border transition-all ${
+                    meta
+                      ? `${meta.cardBorder} ${meta.cardShadow}`
+                      : 'border-border/40 shadow-sm'
+                  }`}
                 >
-                  <Eye className="h-3 w-3" /> View
-                </Link>
-                <Link
-                  to={`/drivers/${d._id}/edit`}
-                  className="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold text-foreground bg-muted hover:bg-muted/80 transition-colors"
-                >
-                  <Pencil className="h-3 w-3" /> Edit
-                </Link>
-                <button
-                  onClick={() => setConfirmDeleteId(d._id)}
-                  className="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
-                >
-                  <Trash2 className="h-3 w-3" /> Delete
-                </button>
-              </div>
-            </div>
-          ))
-        )}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative shrink-0">
+                        <div
+                          className={`flex ${rank === 1 && isRanked ? 'h-12 w-12' : 'h-11 w-11'} items-center justify-center rounded-xl bg-gradient-to-br ${avatarColor(d.name)} text-sm font-bold text-white shadow-sm`}
+                        >
+                          {getInitials(d.name)}
+                        </div>
+                        {meta && RankIcon && (
+                          <span className={`absolute -top-1.5 -right-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full ${meta.badgeBg} ${meta.badgeRing}`}>
+                            <RankIcon className={`h-3 w-3 ${meta.iconColor}`} />
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground truncate">{d.name}</p>
+                        <p className="text-xs text-muted-foreground font-mono">{d.id}</p>
+                      </div>
+                    </div>
+                    <ScoreBadge score={d.avgScore} />
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                      <span>Safety Score</span>
+                      <span>{d.totalTrips} trips</span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          (d.avgScore ?? 0) >= 90 ? 'bg-emerald-500' :
+                          (d.avgScore ?? 0) >= 75 ? 'bg-blue-500'    :
+                          (d.avgScore ?? 0) >= 60 ? 'bg-amber-500'   :
+                          'bg-red-500'
+                        }`}
+                        style={{ width: `${d.avgScore ?? 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border/30 pt-3">
+                    <Link
+                      to={`/drivers/${d._id}`}
+                      className="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                    >
+                      <Eye className="h-3 w-3" /> View
+                    </Link>
+                    <Link
+                      to={`/drivers/${d._id}/edit`}
+                      className="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold text-foreground bg-muted hover:bg-muted/80 transition-colors"
+                    >
+                      <Pencil className="h-3 w-3" /> Edit
+                    </Link>
+                    <button
+                      onClick={() => setConfirmDeleteId(d._id)}
+                      className="flex items-center justify-center gap-1 rounded-lg py-2 text-xs font-semibold text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" /> Delete
+                    </button>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+
       </div>
     </div>
   )

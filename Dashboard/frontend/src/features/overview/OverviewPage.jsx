@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import StatCard from '../../shared/components/StatCard.jsx'
 import { notifications, safetyScoreHistory } from '../../data/mockData.js'
+import apiClient from '../../services/apiClient.js'
 
 /* ── Violation type config ───────────────────────────────────────────── */
 const V_CONFIG = {
@@ -46,12 +47,8 @@ const AreaTooltip = ({ active, payload, label }) => {
   )
 }
 
-const NGROK_H = { 'ngrok-skip-browser-warning': 'true' }
-
 /* ── Component ──────────────────────────────────────────────────────── */
 const OverviewPage = () => {
-  const BACKEND = import.meta.env.VITE_BACKEND_URL || ''
-
   const [routeCount,       setRouteCount]       = useState(null)
   const [busCount,         setBusCount]         = useState(null)
   const [driverCount,      setDriverCount]      = useState(null)
@@ -61,10 +58,10 @@ const OverviewPage = () => {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${BACKEND}/api/drivers`,    { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
-      fetch(`${BACKEND}/api/routes`,     { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
-      fetch(`${BACKEND}/api/buses`,      { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
-      fetch(`${BACKEND}/api/violations`, { headers: NGROK_H }).then((r) => r.json()).catch(() => []),
+      apiClient.get('/drivers').then((r) => r.data).catch(() => []),
+      apiClient.get('/routes').then((r) => r.data).catch(() => []),
+      apiClient.get('/buses').then((r) => r.data).catch(() => []),
+      apiClient.get('/violations').then((r) => r.data).catch(() => []),
     ]).then(([drvs, rts, bss, viols]) => {
       /* Drivers */
       const driverList = Array.isArray(drvs) ? drvs : []

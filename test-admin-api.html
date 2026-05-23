@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin API Tester</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; margin-top: 0; }
+        h2 { color: #666; font-size: 18px; margin-top: 30px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover { background: #0056b3; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #218838; }
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .info { color: #17a2b8; }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0 15px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        label {
+            font-weight: 600;
+            color: #555;
+            display: block;
+            margin-top: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .status-ok { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Admin API Diagnostic Tool</h1>
+        <p>Test the admin creation API and diagnose authentication issues.</p>
+
+        <h2>1. Check Backend Connection</h2>
+        <button onclick="checkHealth()">Check Health Endpoint</button>
+        <button onclick="checkCsrf()">Get CSRF Token</button>
+        <button onclick="checkAuth()">Check Authentication</button>
+        <div id="connectionOutput" class="output" style="display:none;"></div>
+
+        <h2>2. Authentication</h2>
+        <div class="form-group">
+            <label>Username/Email:</label>
+            <input type="text" id="loginIdentifier" value="superadmin" />
+        </div>
+        <div class="form-group">
+            <label>Password:</label>
+            <input type="password" id="loginPassword" value="SuperAdmin@123!" />
+        </div>
+        <button class="success" onclick="login()">Login</button>
+        <button class="danger" onclick="logout()">Logout</button>
+        <button onclick="clearStorage()">Clear Storage</button>
+        <div id="authOutput" class="output" style="display:none;"></div>
+
+        <h2>3. Create Admin</h2>
+        <div class="form-group">
+            <label>Username:</label>
+            <input type="text" id="newUsername" value="testadmin" />
+        </div>
+        <div class="form-group">
+            <label>Email:</label>
+            <input type="email" id="newEmail" value="test@example.com" />
+        </div>
+        <div class="form-group">
+            <label>Password:</label>
+            <input type="password" id="newPassword" value="TestPass123!" />
+        </div>
+        <div class="form-group">
+            <label>Role:</label>
+            <select id="newRole">
+                <option value="ADMIN">ADMIN</option>
+                <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+            </select>
+        </div>
+        <button class="success" onclick="createAdmin()">Create Admin</button>
+        <button onclick="listAdmins()">List Admins</button>
+        <div id="adminOutput" class="output" style="display:none;"></div>
+
+        <h2>4. Debug Info</h2>
+        <button onclick="showCookies()">Show Cookies</button>
+        <button onclick="showHeaders()">Test Request Headers</button>
+        <div id="debugOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let csrfToken = null;
+
+        function log(elementId, message, type = 'info') {
+            const output = document.getElementById(elementId);
+            output.style.display = 'block';
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearLog(elementId) {
+            const output = document.getElementById(elementId);
+            output.innerHTML = '';
+        }
+
+        async function makeRequest(url, options = {}) {
+            try {
+                const defaultOptions = {
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(csrfToken && !['GET', 'HEAD'].includes(options.method) ? { 'X-CSRF-Token': csrfToken } : {})
+                    }
+                };
+                
+                const response = await fetch(url, { ...defaultOptions, ...options });
+                const data = await response.json();
+                
+                return {
+                    ok: response.ok,
+                    status: response.status,
+                    data: data
+                };
+            } catch (error) {
+                return {
+                    ok: false,
+                    status: 0,
+                    error: error.message
+                };
+            }
+        }
+
+        async function checkHealth() {
+            clearLog('connectionOutput');
+            log('connectionOutput', '🔍 Checking backend health...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/../health`);
+            
+            if (result.ok) {
+                log('connectionOutput', '✅ Backend is running!', 'success');
+                log('connectionOutput', JSON.stringify(result.data, null, 2), 'success');
+            } else {
+                log('connectionOutput', '❌ Backend is not responding!', 'error');
+                log('connectionOutput', `Status: ${result.status}`, 'error');
+            }
+        }
+
+        async function checkCsrf() {
+            clearLog('connectionOutput');
+            log('connectionOutput', '🔍 Fetching CSRF token...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/auth/csrf-token`);
+            
+            if (result.ok) {
+                csrfToken = result.data.data?.csrfToken || result.data.csrfToken;
+                log('connectionOutput', '✅ CSRF token received!', 'success');
+                log('connectionOutput', `Token: ${csrfToken}`, 'success');
+            } else {
+                log('connectionOutput', '❌ Failed to get CSRF token!', 'error');
+                log('connectionOutput', JSON.stringify(result, null, 2), 'error');
+            }
+        }
+
+        async function checkAuth() {
+            clearLog('connectionOutput');
+            log('connectionOutput', '🔍 Checking authentication status...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/auth/me`);
+            
+            if (result.ok) {
+                log('connectionOutput', '✅ Authenticated!', 'success');
+                log('connectionOutput', JSON.stringify(result.data, null, 2), 'success');
+            } else {
+                log('connectionOutput', '❌ Not authenticated!', 'error');
+                log('connectionOutput', `Status: ${result.status}`, 'error');
+                log('connectionOutput', JSON.stringify(result.data, null, 2), 'error');
+            }
+        }
+
+        async function login() {
+            clearLog('authOutput');
+            const identifier = document.getElementById('loginIdentifier').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            log('authOutput', '🔐 Logging in...', 'info');
+            
+            // First get CSRF token
+            await checkCsrf();
+            
+            const result = await makeRequest(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                body: JSON.stringify({ identifier, password })
+            });
+            
+            if (result.ok) {
+                if (result.data.data?.csrfToken) {
+                    csrfToken = result.data.data.csrfToken;
+                }
+                log('authOutput', '✅ Login successful!', 'success');
+                log('authOutput', JSON.stringify(result.data, null, 2), 'success');
+            } else {
+                log('authOutput', '❌ Login failed!', 'error');
+                log('authOutput', JSON.stringify(result, null, 2), 'error');
+            }
+        }
+
+        async function logout() {
+            clearLog('authOutput');
+            log('authOutput', '🚪 Logging out...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/auth/logout`, {
+                method: 'POST'
+            });
+            
+            if (result.ok) {
+                csrfToken = null;
+                log('authOutput', '✅ Logout successful!', 'success');
+            } else {
+                log('authOutput', '❌ Logout failed!', 'error');
+                log('authOutput', JSON.stringify(result, null, 2), 'error');
+            }
+        }
+
+        function clearStorage() {
+            clearLog('authOutput');
+            localStorage.clear();
+            sessionStorage.clear();
+            csrfToken = null;
+            log('authOutput', '✅ Storage cleared!', 'success');
+        }
+
+        async function createAdmin() {
+            clearLog('adminOutput');
+            const username = document.getElementById('newUsername').value;
+            const email = document.getElementById('newEmail').value;
+            const password = document.getElementById('newPassword').value;
+            const role = document.getElementById('newRole').value;
+            
+            log('adminOutput', '👤 Creating admin...', 'info');
+            log('adminOutput', `Username: ${username}, Email: ${email}, Role: ${role}`, 'info');
+            
+            const payload = { username, email, password, role };
+            log('adminOutput', `Request payload: ${JSON.stringify(payload, null, 2)}`, 'info');
+            
+            const result = await makeRequest(`${API_BASE}/admins`, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            
+            if (result.ok) {
+                log('adminOutput', '✅ Admin created successfully!', 'success');
+                log('adminOutput', JSON.stringify(result.data, null, 2), 'success');
+            } else {
+                log('adminOutput', '❌ Failed to create admin!', 'error');
+                log('adminOutput', `Status: ${result.status}`, 'error');
+                log('adminOutput', `Response: ${JSON.stringify(result.data, null, 2)}`, 'error');
+                
+                // Show validation details if available
+                if (result.data?.details) {
+                    log('adminOutput', '📋 Validation errors:', 'error');
+                    result.data.details.forEach(detail => {
+                        log('adminOutput', `  - ${detail.field || detail.param}: ${detail.message || detail.msg}`, 'error');
+                    });
+                }
+            }
+        }
+
+        async function listAdmins() {
+            clearLog('adminOutput');
+            log('adminOutput', '📋 Fetching admins...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/admins`);
+            
+            if (result.ok) {
+                log('adminOutput', '✅ Admins fetched!', 'success');
+                log('adminOutput', JSON.stringify(result.data, null, 2), 'success');
+            } else {
+                log('adminOutput', '❌ Failed to fetch admins!', 'error');
+                log('adminOutput', JSON.stringify(result, null, 2), 'error');
+            }
+        }
+
+        function showCookies() {
+            clearLog('debugOutput');
+            log('debugOutput', '🍪 Current cookies:', 'info');
+            
+            const cookies = document.cookie.split(';');
+            if (cookies.length === 0 || (cookies.length === 1 && cookies[0] === '')) {
+                log('debugOutput', '  No cookies found!', 'error');
+            } else {
+                cookies.forEach(cookie => {
+                    log('debugOutput', `  ${cookie.trim()}`, 'info');
+                });
+            }
+            
+            log('debugOutput', '\n📝 CSRF Token in memory:', 'info');
+            log('debugOutput', `  ${csrfToken || 'Not set'}`, csrfToken ? 'success' : 'error');
+        }
+
+        async function showHeaders() {
+            clearLog('debugOutput');
+            log('debugOutput', '📨 Testing request headers...', 'info');
+            
+            log('debugOutput', '\nHeaders that will be sent:', 'info');
+            log('debugOutput', `  Content-Type: application/json`, 'info');
+            log('debugOutput', `  X-CSRF-Token: ${csrfToken || 'Not set'}`, csrfToken ? 'success' : 'error');
+            log('debugOutput', `  Credentials: include`, 'info');
+            
+            log('debugOutput', '\nCookies:', 'info');
+            const cookies = document.cookie.split(';');
+            cookies.forEach(cookie => {
+                log('debugOutput', `  ${cookie.trim()}`, 'info');
+            });
+        }
+
+        // Auto-check on load
+        window.onload = () => {
+            checkHealth();
+        };
+    </script>
+</body>
+</html>

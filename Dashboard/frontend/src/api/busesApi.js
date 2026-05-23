@@ -1,30 +1,11 @@
-const BACKEND = import.meta.env.VITE_BACKEND_URL || ''
-const BASE = `${BACKEND}/api/buses`
+import apiClient from '../services/apiClient.js'
 
-const H = { 'ngrok-skip-browser-warning': 'true' }
-const J = { 'Content-Type': 'application/json', ...H }
-
-const handleResponse = async (res) => {
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`)
-  return json
-}
-
-export const fetchBuses = () => fetch(BASE, { headers: H }).then(handleResponse)
+export const fetchBuses = () => apiClient.get('/buses').then((r) => r.data)
 
 export const createBus = ({ capacity }) =>
-  fetch(BASE, {
-    method: 'POST',
-    headers: J,
-    body: JSON.stringify({ capacity }),
-  }).then(handleResponse)
+  apiClient.post('/buses', { capacity }).then((r) => r.data)
 
 export const updateBus = (id, { capacity }) =>
-  fetch(`${BASE}/${id}`, {
-    method: 'PUT',
-    headers: J,
-    body: JSON.stringify({ capacity }),
-  }).then(handleResponse)
+  apiClient.put(`/buses/${id}`, { capacity }).then((r) => r.data)
 
-export const deleteBus = (id) =>
-  fetch(`${BASE}/${id}`, { method: 'DELETE', headers: H }).then(handleResponse)
+export const deleteBus = (id) => apiClient.delete(`/buses/${id}`).then((r) => r.data)

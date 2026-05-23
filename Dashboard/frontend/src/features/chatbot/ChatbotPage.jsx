@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Bot, User, Sparkles, RefreshCw } from 'lucide-react'
+import apiClient from '../../services/apiClient.js'
 
 /* ── Static initial messages ──────────────────────────────────────────── */
 const INITIAL_MESSAGES = [
@@ -17,16 +18,8 @@ const INITIAL_MESSAGES = [
   },
 ]
 
-const CHAT_URL = `${import.meta.env.VITE_BACKEND_URL || ''}/api/chat`
-
 async function fetchAnswer(query) {
-  const res = await fetch(CHAT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-    body: JSON.stringify({ query }),
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || 'Unknown error')
+  const { data } = await apiClient.post('/chat', { query })
   return data.answer
 }
 
